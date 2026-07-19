@@ -101,6 +101,18 @@ c3.abort();
 const reconnected = /\{[^}]*"id":"remote"[^}]*\}/.exec(chunk3)?.[0] ?? "";
 check("same slot after reconnect", reconnected.includes('"slot":1') && reconnected.includes('"connected":true'));
 
+// Kick removes a session immediately (no grace)
+const kicked = new SimClient(url, "kickme", "pane-kick", () => {}, () => {});
+check("kick target registers", await kicked.connect());
+await fetch(`${url}/kick`, { method: "POST", body: JSON.stringify({ id: "kickme" }) });
+await new Promise((r) => setTimeout(r, 100));
+const ck = new AbortController();
+const eventsK = await fetch(`${url}/events`, { signal: ck.signal });
+const chunkK = new TextDecoder().decode((await eventsK.body!.getReader().read()).value);
+ck.abort();
+check("kicked session gone immediately", !chunkK.includes("pane-kick"));
+kicked.close();
+
 // Hub teardown triggers client disconnect callback
 let lost = false;
 const client3 = new SimClient(url, "remote-3", "pane-three", () => {}, () => (lost = true));

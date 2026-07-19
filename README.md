@@ -130,7 +130,10 @@ on its own.
   amber, complete green, needs-input blue, error red); click one to
   jump straight to that session's terminal pane, like pressing an
   agent key on the real device; shift-click or the 1-4 number keys
-  target an agent for the controls without switching panes
+  target an agent for the controls without switching panes; clicking
+  a dimmed (disconnected) key removes it immediately
+- **Six agent keys**, matching the device; sessions beyond six wait
+  and join automatically when a key frees
 - **Slots are sticky:** a dropped session keeps its key for 10 seconds
   so reconnects, `/new`, and `/reload` never reshuffle the row; the
   hub itself survives `/reload` and `/new` (it only shuts down when pi
@@ -156,6 +159,8 @@ extension and become ordinary pi input. `scripts/sim-smoke.ts`
 | `/codex-micro status` | Transport, state, and config summary |
 | `/codex-micro sim` | Start the browser simulator and open it |
 | `/codex-micro sim stop` | Stop the simulator server |
+| `/codex-micro leave` | Drop this session off the mesh (frees its agent key immediately) |
+| `/codex-micro join` | Rejoin the mesh after leaving |
 | `/codex-micro connect` | (Re)connect the HID device |
 | `/codex-micro disconnect` | Close the HID device |
 | `/codex-micro test` | Cycle all five LED states |

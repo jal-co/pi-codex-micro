@@ -175,6 +175,20 @@ export class SimConnection implements DeviceTransport {
     }
   }
 
+  /**
+   * Intentional exit: free this session's agent key immediately
+   * instead of letting it linger through the disconnect grace period.
+   */
+  async leave(): Promise<void> {
+    if (this.mode === "client") {
+      await fetch(`${this.url()}/kick`, {
+        method: "POST",
+        body: JSON.stringify({ id: this.id }),
+      }).catch(() => {});
+    }
+    await this.stop();
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.keepAliveTimer) {

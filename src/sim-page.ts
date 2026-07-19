@@ -69,6 +69,8 @@ export const SIM_PAGE = /* html */ `<!doctype html>
 
   .keys { display: grid; grid-template-rows: auto auto auto; gap: 12px; }
   .row { display: grid; grid-template-columns: repeat(4, 64px); gap: 12px; }
+  .row-agents { display: grid; grid-template-columns: repeat(6, 56px); gap: 10px; }
+  .row-agents .key { height: 56px; }
 
   .key {
     height: 64px; border-radius: 12px;
@@ -163,11 +165,13 @@ export const SIM_PAGE = /* html */ `<!doctype html>
 
   <div class="device">
     <div class="keys">
-      <div class="row" id="agents">
+      <div class="row-agents" id="agents">
         <button class="key agent" data-slot="0" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
         <button class="key agent" data-slot="1" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
         <button class="key agent" data-slot="2" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
         <button class="key agent" data-slot="3" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+        <button class="key agent" data-slot="4" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+        <button class="key agent" data-slot="5" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
       </div>
       <div class="row">
         <button class="key" data-action='{"kind":"command","value":"accept"}'><span class="cap">✓<small>ACCEPT</small></span></button>
@@ -210,11 +214,11 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     <span><i style="background:var(--needs-input)"></i>needs input</span>
     <span><i style="background:var(--error)"></i>error</span>
   </div>
-  <div class="log" id="log">click agent = jump to pane · shift-click or 1-4 = target only · arrows = joystick · +/- = dial</div>
+  <div class="log" id="log">click agent = jump to pane · shift-click or 1-6 = target only · click dimmed = remove · arrows = joystick · +/- = dial</div>
 </div>
 
 <script>
-  const SLOT_COUNT = 4;
+  const SLOT_COUNT = 6;
   let sessions = [];
   let selectedId = null;
 
@@ -288,6 +292,13 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     key.addEventListener("click", (event) => {
       const session = sessions.find((s) => s.slot === slot);
       if (!session) return;
+      // A dimmed key is a dead session: click removes it immediately
+      // instead of waiting out the reconnect grace period.
+      if (!session.connected) {
+        log(session.name + ": removed");
+        fetch("/kick", { method: "POST", body: JSON.stringify({ id: session.id }) }).catch(() => {});
+        return;
+      }
       selectedId = session.id;
       render();
       // Shift-click targets without switching panes.
@@ -299,7 +310,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   });
 
   document.addEventListener("keydown", (event) => {
-    if (["1", "2", "3", "4"].includes(event.key)) {
+    if (["1", "2", "3", "4", "5", "6"].includes(event.key)) {
       const session = sessions.find((s) => s.slot === Number(event.key) - 1);
       if (session) { selectedId = session.id; render(); }
       return;

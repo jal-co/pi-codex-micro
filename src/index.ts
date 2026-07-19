@@ -305,6 +305,25 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("Simulator stopped", "info");
           break;
         }
+        case "leave": {
+          // Drop this session off the sim mesh without touching the
+          // device transport. If it was hosting, another session takes
+          // over the port via its reconnect logic.
+          await sim.leave();
+          ctx.ui.notify("Left the simulator mesh (/codex-micro join to rejoin)", "info");
+          showStatus(ctx);
+          break;
+        }
+        case "join": {
+          const joined = await sim.ensure();
+          sim.keepAlive();
+          ctx.ui.notify(
+            joined === "off" ? "Could not join the mesh" : `Joined the mesh as ${joined}`,
+            joined === "off" ? "error" : "info",
+          );
+          showStatus(ctx);
+          break;
+        }
         case "status": {
           const lines = [
             `transport: ${transport.describe()}`,

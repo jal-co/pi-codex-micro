@@ -274,6 +274,14 @@ export class SimHub {
       return;
     }
 
+    // Remove a session immediately (page action on a dead key).
+    if (req.method === "POST" && path === "/kick") {
+      const body = JSON.parse(await readBody(req)) as { id: string };
+      this.removeSession(body.id);
+      res.writeHead(204).end();
+      return;
+    }
+
     if (req.method === "POST" && path === "/register") {
       const body = JSON.parse(await readBody(req)) as RegisterRequest;
       const slot = this.upsert(body.id, body.name, null, false, body);

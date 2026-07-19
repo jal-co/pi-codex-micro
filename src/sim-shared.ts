@@ -7,8 +7,8 @@ import type { AgentState } from "./transport.js";
 /** Fixed hub port so every pi session and the browser find each other. */
 export const SIM_PORT = 7327;
 
-/** The device has four agent keys. */
-export const SLOT_COUNT = 4;
+/** The device has six agent keys. */
+export const SLOT_COUNT = 6;
 
 /** How long a disconnected session keeps its agent key (reconnect grace). */
 export const SLOT_GRACE_MS = 10_000;
