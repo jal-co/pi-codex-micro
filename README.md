@@ -127,9 +127,10 @@ exits, a remaining session takes over the port and the page reconnects
 on its own.
 
 - **Agent keys** glow with each session's live state (thinking pulses
-  amber, complete green, needs-input blue, error red); click one (or
-  press 1-4) to select which agent the controls target; double-click
-  to jump straight to that session's terminal pane
+  amber, complete green, needs-input blue, error red); click one to
+  jump straight to that session's terminal pane, like pressing an
+  agent key on the real device; shift-click or the 1-4 number keys
+  target an agent for the controls without switching panes
 - **Slots are sticky:** a dropped session keeps its key for 10 seconds
   so reconnects, `/new`, and `/reload` never reshuffle the row; the
   hub itself survives `/reload` and `/new` (it only shuts down when pi

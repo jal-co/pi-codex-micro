@@ -3,10 +3,10 @@
  * Served by SimHub; talks SSE (/events) + POST (/action).
  *
  * Multi-agent: each connected pi session occupies one agent key.
- * Clicking an occupied key selects it; double-clicking jumps to its
- * zentty pane. The joystick, dial, and command keys act on the
- * selected session, mirroring the real device's one-agent-per-key
- * model. Agent keys are static DOM updated in place so broadcasts
+ * Clicking an occupied key selects it AND jumps to its terminal pane,
+ * matching the real device: pressing an agent key takes you to that
+ * agent. Shift-click (or keys 1-4) selects without jumping so the
+ * joystick, dial, and command keys can be aimed from the browser. Agent keys are static DOM updated in place so broadcasts
  * never restart animations or shift layout.
  */
 
@@ -210,7 +210,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     <span><i style="background:var(--needs-input)"></i>needs input</span>
     <span><i style="background:var(--error)"></i>error</span>
   </div>
-  <div class="log" id="log">click agent = target · double-click = jump to pane · arrows = joystick · +/- = dial · 1-4 = select</div>
+  <div class="log" id="log">click agent = jump to pane · shift-click or 1-4 = target only · arrows = joystick · +/- = dial</div>
 </div>
 
 <script>
@@ -285,13 +285,13 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   });
 
   agentKeys.forEach((key, slot) => {
-    key.addEventListener("click", () => {
-      const session = sessions.find((s) => s.slot === slot);
-      if (session) { selectedId = session.id; render(); }
-    });
-    key.addEventListener("dblclick", () => {
+    key.addEventListener("click", (event) => {
       const session = sessions.find((s) => s.slot === slot);
       if (!session) return;
+      selectedId = session.id;
+      render();
+      // Shift-click targets without switching panes.
+      if (event.shiftKey) return;
       if (!session.canFocus) { log(session.name + ": pane focus not supported here"); return; }
       log(session.name + ": jumping to pane");
       fetch("/action", { method: "POST", body: JSON.stringify({ kind: "focus", sessionId: session.id }) }).catch(() => {});
