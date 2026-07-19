@@ -10,6 +10,7 @@
 import { SimClient } from "../src/sim-client.js";
 import { SimHub } from "../src/sim-server.js";
 import type { SimAction } from "../src/sim-shared.js";
+import { SimConnection } from "../src/sim.js";
 import { detectTerminal } from "../src/terminal.js";
 
 const results: Array<[string, boolean]> = [];
@@ -110,6 +111,19 @@ check("client detects hub loss", lost);
 client2.close();
 client3.close();
 void disconnected;
+
+// Auto-mesh: two SimConnections on the fixed port, first hosts, second joins
+const MESH_PORT = 7399; // off the real port so a live mesh doesn't interfere
+const meshA = new SimConnection(() => {}, MESH_PORT);
+meshA.setIdentity("mesh-a", "pane-a");
+const meshB = new SimConnection(() => {}, MESH_PORT);
+meshB.setIdentity("mesh-b", "pane-b");
+const modeA = await meshA.ensure();
+const modeB = await meshB.ensure();
+check("first ensure hosts hub", modeA === "hub");
+check("second ensure joins as client", modeB === "client");
+await meshB.stop();
+await meshA.stop();
 
 const failed = results.filter(([, ok]) => !ok).length;
 console.log(failed === 0 ? "all checks passed" : `${failed} checks FAILED`);

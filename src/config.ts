@@ -18,6 +18,12 @@ export interface MicroConfig {
   /** Which agent key slot this pi instance lights up (0-based). */
   agentSlot: number;
   /**
+   * Join the simulator mesh automatically at session start. The first
+   * session hosts the hub; the rest connect as clients. /codex-micro
+   * sim then only opens the browser page. Set false to opt out.
+   */
+  autoStart: boolean;
+  /**
    * Joystick directions -> pi input to send. Values are sent as user
    * messages, so slash commands, /skill:name, and plain prompts all work.
    */
@@ -38,6 +44,7 @@ export const DEFAULT_CONFIG: MicroConfig = {
   usagePage: USAGE_PAGE,
   usage: USAGE,
   agentSlot: 0,
+  autoStart: true,
   joystick: {
     up: "/skill:impeccable",
     down: "/skill:git",

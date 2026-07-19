@@ -131,9 +131,19 @@ export default function (pi: ExtensionAPI) {
     });
     await transport.connect();
     await tracker.set("idle");
-    // Auto-join a running simulator so every zentty pane shows up
-    // on the page without needing /codex-micro sim in each one.
-    await sim.probe();
+    // Join the sim mesh automatically: the first interactive session
+    // hosts the hub, later ones register as clients on creation.
+    // Skip print/json modes so scripted pi runs don't bind ports.
+    // Interactive sessions only: print/json runs are transient and
+    // should never appear as agent keys or bind the hub port.
+    if (ctx.hasUI) {
+      if (config.autoStart) {
+        await sim.ensure();
+        sim.keepAlive();
+      } else {
+        await sim.probe();
+      }
+    }
     sim.setThinkingLevel(pi.getThinkingLevel());
     showStatus(ctx);
   });

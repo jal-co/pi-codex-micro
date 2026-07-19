@@ -31,8 +31,12 @@ export class SimConnection implements DeviceTransport {
   private lastModel = "";
   private reconnecting = false;
   private stopped = true;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(onAction: (action: SimAction) => void | Promise<void>) {
+  constructor(
+    onAction: (action: SimAction) => void | Promise<void>,
+    private readonly port: number = SIM_PORT,
+  ) {
     this.onAction = onAction;
   }
 
@@ -56,7 +60,7 @@ export class SimConnection implements DeviceTransport {
   }
 
   url(): string {
-    return `http://127.0.0.1:${SIM_PORT}`;
+    return `http://127.0.0.1:${this.port}`;
   }
 
   // ── DeviceTransport ────────────────────────────────────────────────
@@ -113,7 +117,7 @@ export class SimConnection implements DeviceTransport {
     // Try to claim the port.
     const hub = new SimHub((action) => this.onAction(action));
     try {
-      await hub.start(SIM_PORT);
+      await hub.start(this.port);
       this.hub = hub;
       this.mode = "hub";
       hub.registerLocal(this.id, this.name, this.info);
@@ -141,6 +145,19 @@ export class SimConnection implements DeviceTransport {
     return "off";
   }
 
+  /**
+   * Keep trying to join the mesh while offline. Covers sessions that
+   * lost the hub race for a full slot row, or started while all four
+   * agent keys were taken: they join as soon as a key frees up.
+   */
+  keepAlive(intervalMs = 15_000): void {
+    if (this.keepAliveTimer) return;
+    this.keepAliveTimer = setInterval(() => {
+      if (this.mode === "off" && !this.stopped) void this.ensure();
+    }, intervalMs);
+    this.keepAliveTimer.unref();
+  }
+
   /** Silent auto-join: only connects if a hub is already running. */
   async probe(): Promise<void> {
     if (this.mode !== "off") return;
@@ -160,6 +177,10 @@ export class SimConnection implements DeviceTransport {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
     this.mode = "off";
     this.client?.close();
     this.client = null;
