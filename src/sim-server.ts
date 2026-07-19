@@ -1,98 +1,72 @@
 /**
- * Browser-based Codex Micro simulator.
+ * Multi-session simulator hub.
  *
- * Implements DeviceTransport so LED state changes mirror to the page in
- * real time (Server-Sent Events), and forwards clicks on the virtual
- * keys/dial/joystick back into pi as real inputs. Zero dependencies:
- * plain node:http + SSE + fetch POSTs.
+ * The first pi session to run /codex-micro sim binds SIM_PORT and serves
+ * the device page. Every other pi session registers as a client over
+ * HTTP, is assigned an agent-key slot, streams its state in, and
+ * receives forwarded page actions over a per-session SSE channel.
+ * Liveness is the SSE connection itself: when a client's channel closes,
+ * its slot frees and the page updates.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { SIM_PAGE } from "./sim-page.js";
-import type { AgentState, DeviceTransport } from "./transport.js";
+import {
+  SLOT_COUNT,
+  type BrowserEvent,
+  type MetaRequest,
+  type RegisterRequest,
+  type SessionSnapshot,
+  type SimAction,
+  type StateRequest,
+} from "./sim-shared.js";
+import type { AgentState } from "./transport.js";
 
-export interface SimAction {
-  kind: "joystick" | "dial" | "command" | "interrupt" | "key";
-  /** joystick: up/down/left/right. dial: cw/ccw. command/key: identifier. */
-  value?: string;
+interface HubSession {
+  id: string;
+  name: string;
+  slot: number;
+  state: AgentState;
+  thinking: string;
+  model: string;
+  /** SSE channel for forwarding actions to a remote session. Null for the hub's own session. */
+  channel: ServerResponse | null;
+  isLocal: boolean;
 }
 
-export interface SimHandlers {
-  onAction(action: SimAction): void | Promise<void>;
-}
-
-interface SimEvent {
-  type: "state" | "thinking" | "model" | "hello";
-  slot?: number;
-  state?: AgentState;
-  level?: string;
-  model?: string;
-}
-
-export class SimServer implements DeviceTransport {
+export class SimHub {
   private server: Server | null = null;
-  private clients = new Set<ServerResponse>();
-  private lastStates = new Map<number, AgentState>();
-  private lastThinking = "";
-  private lastModel = "";
+  private browsers = new Set<ServerResponse>();
+  private sessions = new Map<string, HubSession>();
 
-  constructor(private readonly handlers: SimHandlers) {}
+  constructor(private readonly onLocalAction: (action: SimAction) => void | Promise<void>) {}
 
-  // ── DeviceTransport ────────────────────────────────────────────────
+  // ── Lifecycle ──────────────────────────────────────────────────────
 
-  async connect(): Promise<boolean> {
-    return this.server !== null;
-  }
-
-  async disconnect(): Promise<void> {
-    await this.stop();
-  }
-
-  isConnected(): boolean {
-    return this.server !== null;
-  }
-
-  async setAgentState(slot: number, state: AgentState): Promise<void> {
-    this.lastStates.set(slot, state);
-    this.broadcast({ type: "state", slot, state });
-  }
-
-  describe(): string {
-    return this.server ? `sim running at ${this.url()}` : "sim stopped";
-  }
-
-  // ── Extra state mirrored to the page ───────────────────────────────
-
-  setThinkingLevel(level: string): void {
-    this.lastThinking = level;
-    this.broadcast({ type: "thinking", level });
-  }
-
-  setModelName(model: string): void {
-    this.lastModel = model;
-    this.broadcast({ type: "model", model });
-  }
-
-  // ── Server lifecycle ───────────────────────────────────────────────
-
-  async start(port = 0): Promise<string> {
-    if (this.server) return this.url();
-    this.server = createServer((req, res) => void this.route(req, res));
+  async start(port: number): Promise<void> {
+    if (this.server) return;
+    const server = createServer((req, res) => void this.route(req, res));
     await new Promise<void>((resolve, reject) => {
-      this.server!.once("error", reject);
-      this.server!.listen(port, "127.0.0.1", resolve);
+      server.once("error", reject);
+      server.listen(port, "127.0.0.1", resolve);
     });
-    return this.url();
+    this.server = server;
   }
 
   async stop(): Promise<void> {
-    for (const client of this.clients) client.end();
-    this.clients.clear();
+    for (const browser of this.browsers) browser.end();
+    this.browsers.clear();
+    for (const session of this.sessions.values()) session.channel?.end();
+    this.sessions.clear();
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
       this.server = null;
     }
+  }
+
+  isRunning(): boolean {
+    return this.server !== null;
   }
 
   url(): string {
@@ -100,10 +74,93 @@ export class SimServer implements DeviceTransport {
     return address ? `http://127.0.0.1:${address.port}` : "";
   }
 
-  // ── HTTP routing ───────────────────────────────────────────────────
+  // ── Local (hub-owned) session ──────────────────────────────────────
+
+  registerLocal(id: string, name: string): number {
+    return this.upsert(id, name, null, true);
+  }
+
+  updateState(id: string, state: AgentState): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.state = state;
+    this.broadcast();
+  }
+
+  updateMeta(id: string, meta: { thinking?: string; model?: string }): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    if (meta.thinking !== undefined) session.thinking = meta.thinking;
+    if (meta.model !== undefined) session.model = meta.model;
+    this.broadcast();
+  }
+
+  removeSession(id: string): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.channel?.end();
+    this.sessions.delete(id);
+    this.broadcast();
+  }
+
+  sessionCount(): number {
+    return this.sessions.size;
+  }
+
+  // ── Internals ──────────────────────────────────────────────────────
+
+  private upsert(id: string, name: string, channel: ServerResponse | null, isLocal: boolean): number {
+    const existing = this.sessions.get(id);
+    if (existing) {
+      existing.name = name;
+      if (channel) {
+        existing.channel?.end();
+        existing.channel = channel;
+      }
+      this.broadcast();
+      return existing.slot;
+    }
+    const used = new Set([...this.sessions.values()].map((s) => s.slot));
+    let slot = -1;
+    for (let i = 0; i < SLOT_COUNT; i += 1) {
+      if (!used.has(i)) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot === -1) return -1; // all agent keys taken
+    this.sessions.set(id, {
+      id,
+      name,
+      slot,
+      state: "idle",
+      thinking: "",
+      model: "",
+      channel,
+      isLocal,
+    });
+    this.broadcast();
+    return slot;
+  }
+
+  private snapshot(): SessionSnapshot[] {
+    return [...this.sessions.values()]
+      .sort((a, b) => a.slot - b.slot)
+      .map(({ id, name, slot, state, thinking, model }) => ({ id, name, slot, state, thinking, model }));
+  }
+
+  private broadcast(): void {
+    const event: BrowserEvent = { type: "sessions", sessions: this.snapshot() };
+    for (const browser of this.browsers) this.send(browser, event);
+  }
+
+  private send(res: ServerResponse, event: unknown): void {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
 
   private async route(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const path = url.pathname;
 
     if (req.method === "GET" && path === "/") {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -111,27 +168,72 @@ export class SimServer implements DeviceTransport {
       return;
     }
 
+    if (req.method === "GET" && path === "/ping") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: this.sessions.size }));
+      return;
+    }
+
+    // Browser state stream.
     if (req.method === "GET" && path === "/events") {
-      res.writeHead(200, {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        connection: "keep-alive",
+      this.sse(res);
+      this.browsers.add(res);
+      req.on("close", () => this.browsers.delete(res));
+      this.send(res, { type: "hello" } satisfies BrowserEvent);
+      this.send(res, { type: "sessions", sessions: this.snapshot() } satisfies BrowserEvent);
+      return;
+    }
+
+    // Remote session action channel. The connection doubles as liveness.
+    if (req.method === "GET" && path === "/agent-events") {
+      const id = url.searchParams.get("id") ?? "";
+      const name = url.searchParams.get("name") ?? "agent";
+      this.sse(res);
+      const slot = this.upsert(id, name, res, false);
+      if (slot === -1) {
+        this.send(res, { type: "rejected", reason: "all agent keys in use" });
+        res.end();
+        return;
+      }
+      this.send(res, { type: "registered", slot });
+      req.on("close", () => {
+        const session = this.sessions.get(id);
+        if (session && session.channel === res) this.removeSession(id);
       });
-      this.clients.add(res);
-      req.on("close", () => this.clients.delete(res));
-      // Replay current state to the new client.
-      this.send(res, { type: "hello" });
-      for (const [slot, state] of this.lastStates) this.send(res, { type: "state", slot, state });
-      if (this.lastThinking) this.send(res, { type: "thinking", level: this.lastThinking });
-      if (this.lastModel) this.send(res, { type: "model", model: this.lastModel });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/state") {
+      const body = JSON.parse(await readBody(req)) as StateRequest;
+      this.updateState(body.id, body.state);
+      res.writeHead(204).end();
+      return;
+    }
+
+    if (req.method === "POST" && path === "/meta") {
+      const body = JSON.parse(await readBody(req)) as MetaRequest;
+      this.updateMeta(body.id, body);
+      res.writeHead(204).end();
+      return;
+    }
+
+    if (req.method === "POST" && path === "/register") {
+      const body = JSON.parse(await readBody(req)) as RegisterRequest;
+      const slot = this.upsert(body.id, body.name, null, false);
+      res.writeHead(slot === -1 ? 409 : 200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ slot }));
       return;
     }
 
     if (req.method === "POST" && path === "/action") {
       try {
-        const body = await readBody(req);
-        const action = JSON.parse(body) as SimAction;
-        await this.handlers.onAction(action);
+        const action = JSON.parse(await readBody(req)) as SimAction;
+        const target = action.sessionId ? this.sessions.get(action.sessionId) : null;
+        if (target && !target.isLocal && target.channel) {
+          this.send(target.channel, { type: "action", action });
+        } else if (target?.isLocal || !action.sessionId) {
+          await this.onLocalAction(action);
+        }
         res.writeHead(204).end();
       } catch (error) {
         res.writeHead(400, { "content-type": "text/plain" }).end(String(error));
@@ -142,12 +244,12 @@ export class SimServer implements DeviceTransport {
     res.writeHead(404).end("not found");
   }
 
-  private broadcast(event: SimEvent): void {
-    for (const client of this.clients) this.send(client, event);
-  }
-
-  private send(res: ServerResponse, event: SimEvent): void {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  private sse(res: ServerResponse): void {
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
   }
 }
 

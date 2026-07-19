@@ -1,28 +1,32 @@
 /**
  * Standalone simulator demo: no pi session needed.
- * Starts the sim page on a fixed port, cycles agent states so the LEDs
- * are visibly alive, and logs any actions clicked on the page.
+ * Starts the hub on the fixed port, registers three fake agents, and
+ * cycles their states so the multi-agent UI can be previewed.
  *
  *   npx tsx scripts/sim-demo.ts
  */
 
-import { SimServer } from "../src/sim-server.js";
+import { SimHub } from "../src/sim-server.js";
+import { SIM_PORT } from "../src/sim-shared.js";
 import type { AgentState } from "../src/transport.js";
 
-const sim = new SimServer({
-  onAction: (action) => console.log("action:", action.kind, action.value ?? ""),
-});
+const hub = new SimHub((action) => console.log("action:", action.sessionId, action.kind, action.value ?? ""));
+await hub.start(SIM_PORT);
 
-const url = await sim.start(7327);
-sim.setModelName("demo mode (not connected to a pi session)");
-sim.setThinkingLevel("medium");
-console.log(`Codex Micro sim demo: ${url} (ctrl+c to stop)`);
+hub.registerLocal("demo-1", "jalco-pi-mono");
+hub.registerLocal("demo-2", "pi-codex-micro");
+hub.registerLocal("demo-3", "shieldcn");
+hub.updateMeta("demo-1", { model: "anthropic/claude-fable-5", thinking: "medium" });
+hub.updateMeta("demo-2", { model: "openai-codex/gpt-5.5", thinking: "high" });
+hub.updateMeta("demo-3", { model: "zai/glm-5.2", thinking: "low" });
+
+console.log(`Codex Micro sim demo: http://127.0.0.1:${SIM_PORT} (ctrl+c to stop)`);
 
 const cycle: AgentState[] = ["idle", "thinking", "thinking", "thinking", "complete", "needs-input", "error"];
 let tick = 0;
 setInterval(() => {
-  void sim.setAgentState(0, cycle[tick % cycle.length]);
-  void sim.setAgentState(1, cycle[(tick + 3) % cycle.length]);
-  void sim.setAgentState(2, cycle[(tick + 5) % cycle.length]);
+  hub.updateState("demo-1", cycle[tick % cycle.length]);
+  hub.updateState("demo-2", cycle[(tick + 3) % cycle.length]);
+  hub.updateState("demo-3", cycle[(tick + 5) % cycle.length]);
   tick += 1;
 }, 1500);

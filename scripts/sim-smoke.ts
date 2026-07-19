@@ -1,26 +1,69 @@
-import { SimServer, type SimAction } from "../src/sim-server.js";
+/**
+ * Headless smoke test for the multi-session simulator.
+ * Exercises: hub startup, local + remote registration, slot assignment,
+ * state broadcast to the browser stream, action routing to a remote
+ * client, and client failover detection.
+ *
+ *   npx tsx scripts/sim-smoke.ts
+ */
 
-const received: SimAction[] = [];
-const sim = new SimServer({ onAction: (a) => void received.push(a) });
-const url = await sim.start();
-console.log("started:", url);
+import { SimClient } from "../src/sim-client.js";
+import { SimHub } from "../src/sim-server.js";
+import type { SimAction } from "../src/sim-shared.js";
 
-// Page loads
+const results: Array<[string, boolean]> = [];
+const check = (name: string, ok: boolean) => {
+  results.push([name, ok]);
+  console.log(`${ok ? "ok " : "FAIL"} ${name}`);
+};
+
+const hubActions: SimAction[] = [];
+const hub = new SimHub((a) => void hubActions.push(a));
+await hub.start(0);
+const url = hub.url();
+check("hub starts", Boolean(url));
+
+// Page serves
 const page = await fetch(url);
-console.log("page status:", page.status, "html:", (await page.text()).includes("CODEX MICRO"));
+check("page 200 + html", page.status === 200 && (await page.text()).includes("CODEX MICRO"));
 
-// SSE replays state
-await sim.setAgentState(0, "thinking");
+// Local session takes slot 0
+const slot0 = hub.registerLocal("local", "hub-session");
+check("local session gets slot 0", slot0 === 0);
+
+// Remote client registers via SSE channel and takes slot 1
+const clientActions: SimAction[] = [];
+let disconnected = false;
+const client = new SimClient(url, "remote", "pane-two", (a) => void clientActions.push(a), () => (disconnected = true));
+check("client registers", await client.connect());
+
+// State pushes broadcast to browser stream
+check("client state push", await client.pushState("thinking"));
 const controller = new AbortController();
 const events = await fetch(`${url}/events`, { signal: controller.signal });
-const reader = events.body!.getReader();
-const chunk = new TextDecoder().decode((await reader.read()).value);
-console.log("sse replay has state:", chunk.includes('"thinking"'));
+const chunk = new TextDecoder().decode((await events.body!.getReader().read()).value);
 controller.abort();
+check(
+  "browser snapshot has both sessions",
+  chunk.includes("hub-session") && chunk.includes("pane-two") && chunk.includes('"thinking"'),
+);
 
-// Actions round-trip
-const res = await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "joystick", value: "up" }) });
-console.log("action status:", res.status, "received:", JSON.stringify(received));
+// Actions route: to hub-local session
+await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "dial", value: "cw", sessionId: "local" }) });
+await new Promise((r) => setTimeout(r, 100));
+check("action routes to local", hubActions.some((a) => a.kind === "dial"));
 
-await sim.stop();
-console.log("stopped");
+// Actions route: forwarded to remote client
+await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "joystick", value: "up", sessionId: "remote" }) });
+await new Promise((r) => setTimeout(r, 200));
+check("action forwards to client", clientActions.some((a) => a.kind === "joystick" && a.value === "up"));
+
+// Hub teardown triggers client disconnect callback
+await hub.stop();
+await new Promise((r) => setTimeout(r, 200));
+check("client detects hub loss", disconnected);
+client.close();
+
+const failed = results.filter(([, ok]) => !ok).length;
+console.log(failed === 0 ? "all checks passed" : `${failed} checks FAILED`);
+process.exit(failed === 0 ? 0 : 1);

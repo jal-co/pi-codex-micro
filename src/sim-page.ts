@@ -1,6 +1,11 @@
 /**
  * Single-file HTML page for the Codex Micro simulator.
- * Served by SimServer; talks SSE (/events) + POST (/action).
+ * Served by SimHub; talks SSE (/events) + POST (/action).
+ *
+ * Multi-agent: each connected pi session occupies one agent key.
+ * Clicking an occupied key selects it; the joystick, dial, and command
+ * keys act on the selected session, mirroring how the real device
+ * assigns one agent per key.
  */
 
 export const SIM_PAGE = /* html */ `<!doctype html>
@@ -16,8 +21,11 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     --frame: #23252c;
     --key: #2b2d35;
     --key-edge: #383b45;
+    --key-border: #40434f;
+    --key-border-hover: #565a68;
+    --key-border-selected: #8b91a5;
     --text: #d7d9e0;
-    --muted: #7c8090;
+    --muted: #8d92a3;
     --idle: #4a4d59;
     --thinking: #f5a623;
     --complete: #3ddc84;
@@ -37,7 +45,8 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   .wrap { text-align: center; }
   header { margin-bottom: 20px; }
   header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; }
-  header .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 18px; }
+  header .sub b { color: var(--text); font-weight: 600; }
   .dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     background: var(--error); margin-right: 6px; vertical-align: 1px;
@@ -57,24 +66,27 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   }
 
   .keys { display: grid; grid-template-rows: auto auto auto; gap: 12px; }
-  .row { display: grid; grid-template-columns: repeat(4, 56px); gap: 12px; }
+  .row { display: grid; grid-template-columns: repeat(4, 64px); gap: 12px; }
 
   .key {
-    height: 56px; border-radius: 12px;
+    height: 64px; border-radius: 12px;
     background: linear-gradient(180deg, var(--key-edge), var(--key));
-    border: 1px solid #40434f;
+    border: 1px solid var(--key-border);
     color: var(--text);
     display: grid; place-items: center;
     font: inherit; font-size: 18px;
     cursor: pointer; user-select: none;
     transition: background 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   }
-  .key:hover { border-color: #565a68; box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+  .key:hover { border-color: var(--key-border-hover); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
   .key:active { background: var(--key); }
-  .key small { font-size: 9px; color: var(--muted); letter-spacing: 0.06em; }
-  .key .cap { display: grid; gap: 2px; place-items: center; }
+  .key:focus-visible { outline: 2px solid var(--needs-input); outline-offset: 2px; }
+  .key small {
+    font-size: 9px; color: var(--muted); letter-spacing: 0.06em;
+    max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .key .cap { display: grid; gap: 3px; place-items: center; }
 
-  .agent { cursor: default; }
   .agent .led {
     width: 14px; height: 14px; border-radius: 50%;
     background: var(--idle);
@@ -84,6 +96,12 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   .agent[data-state="complete"] .led { background: var(--complete); box-shadow: 0 0 12px var(--complete); }
   .agent[data-state="needs-input"] .led { background: var(--needs-input); box-shadow: 0 0 12px var(--needs-input); animation: pulse 1.8s ease-in-out infinite; }
   .agent[data-state="error"] .led { background: var(--error); box-shadow: 0 0 14px var(--error); }
+  .agent[data-empty] { cursor: default; }
+  .agent[data-empty] .led { background: #33353e; }
+  .agent[data-empty] small { color: #565a68; }
+  .agent[data-empty]:hover { border-color: var(--key-border); box-shadow: none; }
+  .agent[aria-pressed="true"] { border-color: var(--key-border-selected); box-shadow: 0 0 0 2px rgba(139,145,165,0.25); }
+  .agent[aria-pressed="true"] small { color: var(--text); }
   @keyframes pulse { 50% { opacity: 0.45; } }
   @media (prefers-reduced-motion: reduce) {
     .agent .led { animation: none !important; }
@@ -109,7 +127,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     cursor: pointer; font: inherit; font-size: 13px; line-height: 1;
     transition: border-color 150ms ease, box-shadow 150ms ease;
   }
-  .dial button:hover { border-color: #565a68; box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+  .dial button:hover { border-color: var(--key-border-hover); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
   .dial .ccw { left: -34px; }
   .dial .cw { right: -34px; }
 
@@ -122,7 +140,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     color: var(--text); cursor: pointer; font: inherit; font-size: 12px;
     transition: border-color 150ms ease, box-shadow 150ms ease;
   }
-  .joy button:hover { border-color: #565a68; box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+  .joy button:hover { border-color: var(--key-border-hover); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
   .joy .hub { background: radial-gradient(circle at 35% 35%, #3d404c, #24262e); border-radius: 50%; cursor: default; }
 
   .legend { margin-top: 18px; color: var(--muted); font-size: 11px; }
@@ -136,17 +154,12 @@ export const SIM_PAGE = /* html */ `<!doctype html>
 <div class="wrap">
   <header>
     <h1><span class="dot" id="dot"></span>CODEX MICRO · SIM</h1>
-    <div class="sub" id="model">pi not connected</div>
+    <div class="sub" id="sub">waiting for pi sessions</div>
   </header>
 
   <div class="device">
     <div class="keys">
-      <div class="row" id="agents">
-        <button class="key agent" data-slot="0" data-state="idle"><span class="cap"><span class="led"></span><small>AGENT 1</small></span></button>
-        <button class="key agent" data-slot="1" data-state="idle"><span class="cap"><span class="led"></span><small>AGENT 2</small></span></button>
-        <button class="key agent" data-slot="2" data-state="idle"><span class="cap"><span class="led"></span><small>AGENT 3</small></span></button>
-        <button class="key agent" data-slot="3" data-state="idle"><span class="cap"><span class="led"></span><small>AGENT 4</small></span></button>
-      </div>
+      <div class="row" id="agents"></div>
       <div class="row">
         <button class="key" data-action='{"kind":"command","value":"accept"}'><span class="cap">✓<small>ACCEPT</small></span></button>
         <button class="key" data-action='{"kind":"interrupt"}'><span class="cap">✕<small>STOP</small></span></button>
@@ -164,7 +177,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     <div class="side">
       <div class="dial">
         <button class="ccw" data-action='{"kind":"dial","value":"ccw"}' title="thinking down">−</button>
-        <div class="ring"><div class="level">THINK<b id="level">?</b></div></div>
+        <div class="ring"><div class="level">THINK<b id="level">·</b></div></div>
         <button class="cw" data-action='{"kind":"dial","value":"cw"}' title="thinking up">+</button>
       </div>
       <div class="joy">
@@ -188,18 +201,65 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     <span><i style="background:var(--needs-input)"></i>needs input</span>
     <span><i style="background:var(--error)"></i>error</span>
   </div>
-  <div class="log" id="log">arrows = joystick · +/- = dial</div>
+  <div class="log" id="log">click an agent key to target it · arrows = joystick · +/- = dial · 1-4 = select agent</div>
 </div>
 
 <script>
+  const SLOT_COUNT = 4;
+  let sessions = [];
+  let selectedId = null;
+
   const log = (message) => { document.getElementById("log").textContent = message; };
+  const selected = () => sessions.find((s) => s.id === selectedId) ?? null;
+
+  function render() {
+    // Keep selection valid: fall back to the first occupied slot.
+    if (!selected()) selectedId = sessions[0] ? sessions[0].id : null;
+
+    const row = document.getElementById("agents");
+    row.replaceChildren();
+    for (let slot = 0; slot < SLOT_COUNT; slot += 1) {
+      const session = sessions.find((s) => s.slot === slot) ?? null;
+      const key = document.createElement("button");
+      key.className = "key agent";
+      key.dataset.state = session ? session.state : "idle";
+      if (!session) key.dataset.empty = "";
+      key.setAttribute("aria-pressed", String(Boolean(session && session.id === selectedId)));
+      const label = session ? session.name : "open";
+      key.innerHTML = '<span class="cap"><span class="led"></span><small></small></span>';
+      key.querySelector("small").textContent = label.toUpperCase();
+      if (session) {
+        key.title = session.name + (session.model ? " · " + session.model : "");
+        key.addEventListener("click", () => { selectedId = session.id; render(); });
+      } else {
+        key.disabled = true;
+      }
+      row.appendChild(key);
+    }
+
+    const current = selected();
+    const sub = document.getElementById("sub");
+    if (current) {
+      sub.replaceChildren();
+      const name = document.createElement("b");
+      name.textContent = current.name;
+      sub.appendChild(name);
+      sub.appendChild(document.createTextNode(current.model ? " · " + current.model : ""));
+    } else {
+      sub.textContent = "waiting for pi sessions";
+    }
+    document.getElementById("level").textContent = current && current.thinking ? current.thinking : "·";
+  }
 
   async function act(action) {
-    log(action.kind + (action.value ? " " + action.value : ""));
+    const current = selected();
+    if (!current) { log("no agent connected"); return; }
+    action.sessionId = current.id;
+    log(current.name + ": " + action.kind + (action.value ? " " + action.value : ""));
     try {
       await fetch("/action", { method: "POST", body: JSON.stringify(action) });
     } catch {
-      log("pi unreachable");
+      log("hub unreachable");
     }
   }
 
@@ -208,6 +268,11 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   });
 
   document.addEventListener("keydown", (event) => {
+    if (["1", "2", "3", "4"].includes(event.key)) {
+      const session = sessions.find((s) => s.slot === Number(event.key) - 1);
+      if (session) { selectedId = session.id; render(); }
+      return;
+    }
     const map = {
       ArrowUp: { kind: "joystick", value: "up" },
       ArrowDown: { kind: "joystick", value: "down" },
@@ -221,22 +286,18 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     if (map[event.key]) { event.preventDefault(); act(map[event.key]); }
   });
 
-  const source = new EventSource("/events");
-  source.onopen = () => document.getElementById("dot").classList.add("on");
-  source.onerror = () => document.getElementById("dot").classList.remove("on");
-  source.onmessage = (message) => {
-    const event = JSON.parse(message.data);
-    if (event.type === "state") {
-      const key = document.querySelector('.agent[data-slot="' + event.slot + '"]');
-      if (key) key.dataset.state = event.state;
-    } else if (event.type === "thinking") {
-      document.getElementById("level").textContent = event.level;
-    } else if (event.type === "model") {
-      document.getElementById("model").textContent = event.model;
-    } else if (event.type === "hello") {
-      document.getElementById("model").textContent = "pi connected";
-    }
-  };
+  function connect() {
+    const source = new EventSource("/events");
+    source.onopen = () => document.getElementById("dot").classList.add("on");
+    source.onerror = () => document.getElementById("dot").classList.remove("on");
+    source.onmessage = (message) => {
+      const event = JSON.parse(message.data);
+      if (event.type === "sessions") { sessions = event.sessions; render(); }
+    };
+  }
+
+  render();
+  connect();
 </script>
 </body>
 </html>

@@ -8,9 +8,10 @@ joystick drive pi; pi drives the agent-state LEDs back.
 
 - **Input side: working.** Keys, dial, and joystick are mapped through
   Work Louder Input to keystrokes that pi shortcuts handle.
-- **Simulator: working.** `/codex-micro sim` opens a browser-based
-  virtual Codex Micro that mirrors LED states live and sends real
-  inputs back to pi. No hardware needed.
+- **Simulator: working, multi-agent.** `/codex-micro sim` opens a
+  browser-based virtual Codex Micro. Every running pi session (each
+  zentty pane) occupies one agent key with its own live state; inputs
+  route to whichever agent is selected. No hardware needed.
 - **Output side: scaffolded.** The LED protocol is undocumented, so the
   extension ships with a mock transport. See
   [docs/protocol-discovery.md](docs/protocol-discovery.md) for the plan
@@ -90,12 +91,21 @@ Joystick and command-key values are sent as pi input, so slash commands,
 
 ## Simulator
 
-Run `/codex-micro sim` in pi. A local page opens showing the device:
+Run `/codex-micro sim` in pi. A local page opens showing the device.
 
-- **Agent keys** glow with the live state (thinking pulses amber,
-  complete green, needs-input blue, error red)
-- **Joystick** arrows fire the four configured skill/prompt slots
-- **Dial** buttons step the thinking level (shown in the knob)
+The first session to run it hosts the hub on port 7327; every other pi
+session auto-joins at startup (or via `/codex-micro sim`, which reports
+it joined instead of opening a second window). Each session takes one
+agent key, labeled with its project directory. If the hosting session
+exits, a remaining session takes over the port and the page reconnects
+on its own.
+
+- **Agent keys** glow with each session's live state (thinking pulses
+  amber, complete green, needs-input blue, error red); click one (or
+  press 1-4) to select which agent the controls target
+- **Joystick** arrows fire the selected session's four skill/prompt slots
+- **Dial** buttons step the selected session's thinking level (shown in
+  the knob)
 - **ACCEPT / STOP / NEW / TEST** command keys: accept sends
   `commandKeys["sim:accept"]` (default "Looks good, proceed."), stop
   aborts the current run, new sends `commandKeys["sim:new"]`
@@ -138,7 +148,10 @@ src/
   hid-transport.ts  node-hid implementation
   mock-transport.ts no-hardware fallback
   protocol.ts       HID report constants (placeholders until sniffed)
-  sim-server.ts     browser simulator (SSE + action endpoint)
+  sim.ts            hub-or-client facade with failover
+  sim-server.ts     multi-session hub (page, SSE, action routing)
+  sim-client.ts     client for sessions joining an existing hub
+  sim-shared.ts     wire types, fixed port, slot count
   sim-page.ts       simulator device page (single-file HTML)
   config.ts         ~/.pi/agent/codex-micro.json loader
 scripts/

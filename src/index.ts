@@ -14,7 +14,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { CONFIG_PATH, loadConfig } from "./config.js";
 import { HidTransport } from "./hid-transport.js";
 import { MockTransport } from "./mock-transport.js";
-import { SimServer, type SimAction } from "./sim-server.js";
+import { basename } from "node:path";
+import { SimConnection } from "./sim.js";
+import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
@@ -52,7 +54,7 @@ const STATE_ICONS: Record<AgentState, string> = {
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
-  const sim = new SimServer({ onAction: (action) => handleSimAction(action) });
+  const sim = new SimConnection((action) => handleSimAction(action));
   const device: DeviceTransport =
     config.transport === "hid" ? new HidTransport(config) : new MockTransport();
   const transport: DeviceTransport = new MultiTransport([device, sim]);
@@ -113,8 +115,12 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     latestCtx = ctx;
+    sim.setIdentity(String(process.pid), basename(ctx.cwd));
     await transport.connect();
     await tracker.set("idle");
+    // Auto-join a running simulator so every zentty pane shows up
+    // on the page without needing /codex-micro sim in each one.
+    await sim.probe();
     sim.setThinkingLevel(pi.getThinkingLevel());
     showStatus(ctx);
   });
@@ -236,12 +242,17 @@ export default function (pi: ExtensionAPI) {
       const sub = (args ?? "").trim() || "status";
       switch (sub) {
         case "sim": {
-          const url = await sim.start();
-          // Mirror the current state so the page opens in sync.
+          const mode = await sim.ensure();
           await sim.setAgentState(config.agentSlot, tracker.state);
           sim.setThinkingLevel(pi.getThinkingLevel());
-          await pi.exec("open", [url]).catch(() => {});
-          ctx.ui.notify(`Simulator running at ${url}`, "info");
+          if (mode === "hub") {
+            await pi.exec("open", [sim.url()]).catch(() => {});
+            ctx.ui.notify(`Simulator running at ${sim.url()}`, "info");
+          } else if (mode === "client") {
+            ctx.ui.notify(`Joined simulator at ${sim.url()} (hosted by another pi session)`, "info");
+          } else {
+            ctx.ui.notify("Could not start or join the simulator (all agent keys in use?)", "error");
+          }
           break;
         }
         case "sim stop": {
