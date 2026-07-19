@@ -8,6 +8,9 @@ joystick drive pi; pi drives the agent-state LEDs back.
 
 - **Input side: working.** Keys, dial, and joystick are mapped through
   Work Louder Input to keystrokes that pi shortcuts handle.
+- **Simulator: working.** `/codex-micro sim` opens a browser-based
+  virtual Codex Micro that mirrors LED states live and sends real
+  inputs back to pi. No hardware needed.
 - **Output side: scaffolded.** The LED protocol is undocumented, so the
   extension ships with a mock transport. See
   [docs/protocol-discovery.md](docs/protocol-discovery.md) for the plan
@@ -85,11 +88,32 @@ prompt.
 Joystick and command-key values are sent as pi input, so slash commands,
 `/skill:name`, and plain prompts all work.
 
+## Simulator
+
+Run `/codex-micro sim` in pi. A local page opens showing the device:
+
+- **Agent keys** glow with the live state (thinking pulses amber,
+  complete green, needs-input blue, error red)
+- **Joystick** arrows fire the four configured skill/prompt slots
+- **Dial** buttons step the thinking level (shown in the knob)
+- **ACCEPT / STOP / NEW / TEST** command keys: accept sends
+  `commandKeys["sim:accept"]` (default "Looks good, proceed."), stop
+  aborts the current run, new sends `commandKeys["sim:new"]`
+  (default `/new`), test cycles all LED states
+- **Keys 1-4** send `commandKeys["sim:k1"]` through `sim:k4`
+- Keyboard works too: arrows = joystick, `+`/`-` = dial, Esc = stop
+
+State flows over Server-Sent Events; clicks POST back into the
+extension and become ordinary pi input. `scripts/sim-smoke.ts`
+(`npx tsx scripts/sim-smoke.ts`) smoke-tests the server headlessly.
+
 ## Commands
 
 | Command | Action |
 |---|---|
 | `/codex-micro status` | Transport, state, and config summary |
+| `/codex-micro sim` | Start the browser simulator and open it |
+| `/codex-micro sim stop` | Stop the simulator server |
 | `/codex-micro connect` | (Re)connect the HID device |
 | `/codex-micro disconnect` | Close the HID device |
 | `/codex-micro test` | Cycle all five LED states |
@@ -114,7 +138,11 @@ src/
   hid-transport.ts  node-hid implementation
   mock-transport.ts no-hardware fallback
   protocol.ts       HID report constants (placeholders until sniffed)
+  sim-server.ts     browser simulator (SSE + action endpoint)
+  sim-page.ts       simulator device page (single-file HTML)
   config.ts         ~/.pi/agent/codex-micro.json loader
+scripts/
+  sim-smoke.ts      headless simulator smoke test
 docs/
   protocol-discovery.md  reverse-engineering plan
 ```

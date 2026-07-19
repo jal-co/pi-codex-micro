@@ -14,8 +14,30 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { CONFIG_PATH, loadConfig } from "./config.js";
 import { HidTransport } from "./hid-transport.js";
 import { MockTransport } from "./mock-transport.js";
+import { SimServer, type SimAction } from "./sim-server.js";
 import { AgentStateTracker } from "./state.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
+
+/** Fans state changes out to the real transport and the simulator. */
+class MultiTransport implements DeviceTransport {
+  constructor(private readonly targets: DeviceTransport[]) {}
+  async connect(): Promise<boolean> {
+    const results = await Promise.all(this.targets.map((t) => t.connect()));
+    return results.some(Boolean);
+  }
+  async disconnect(): Promise<void> {
+    await Promise.all(this.targets.map((t) => t.disconnect()));
+  }
+  isConnected(): boolean {
+    return this.targets.some((t) => t.isConnected());
+  }
+  async setAgentState(slot: number, state: AgentState): Promise<void> {
+    await Promise.all(this.targets.map((t) => t.setAgentState(slot, state)));
+  }
+  describe(): string {
+    return this.targets.map((t) => t.describe()).join(" | ");
+  }
+}
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
@@ -30,10 +52,54 @@ const STATE_ICONS: Record<AgentState, string> = {
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
-  const transport: DeviceTransport =
+  const sim = new SimServer({ onAction: (action) => handleSimAction(action) });
+  const device: DeviceTransport =
     config.transport === "hid" ? new HidTransport(config) : new MockTransport();
+  const transport: DeviceTransport = new MultiTransport([device, sim]);
   const tracker = new AgentStateTracker(transport, config.agentSlot);
   let lastAssistantText = "";
+  let latestCtx: ExtensionContext | null = null;
+
+  async function handleSimAction(action: SimAction): Promise<void> {
+    switch (action.kind) {
+      case "joystick": {
+        const input = config.joystick[action.value as keyof typeof config.joystick];
+        if (input) pi.sendUserMessage(input, { deliverAs: "followUp" });
+        break;
+      }
+      case "dial":
+        stepThinking(latestCtx, action.value === "cw" ? 1 : -1);
+        break;
+      case "interrupt":
+        latestCtx?.abort();
+        break;
+      case "command": {
+        if (action.value === "test") {
+          await runLedTest();
+        } else if (action.value === "accept") {
+          pi.sendUserMessage(config.commandKeys["sim:accept"] ?? "Looks good, proceed.", { deliverAs: "followUp" });
+        } else if (action.value === "new") {
+          pi.sendUserMessage(config.commandKeys["sim:new"] ?? "/new", { deliverAs: "followUp" });
+        }
+        break;
+      }
+      case "key": {
+        const input = config.commandKeys[`sim:${action.value}`];
+        if (input) pi.sendUserMessage(input, { deliverAs: "followUp" });
+        else if (latestCtx?.hasUI) latestCtx.ui.notify(`Sim key ${action.value} unmapped. Set commandKeys["sim:${action.value}"] in codex-micro.json`, "info");
+        break;
+      }
+    }
+  }
+
+  async function runLedTest(): Promise<void> {
+    const states: AgentState[] = ["idle", "thinking", "needs-input", "complete", "error", "idle"];
+    for (const state of states) {
+      await tracker.set(state);
+      if (latestCtx) showStatus(latestCtx);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+  }
 
   const showStatus = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
@@ -46,17 +112,30 @@ export default function (pi: ExtensionAPI) {
   // ── Lifecycle → device LEDs ────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    latestCtx = ctx;
     await transport.connect();
     await tracker.set("idle");
+    sim.setThinkingLevel(pi.getThinkingLevel());
     showStatus(ctx);
   });
 
   pi.on("session_shutdown", async () => {
+    latestCtx = null;
     await tracker.set("idle").catch(() => {});
     await transport.disconnect().catch(() => {});
+    await sim.stop().catch(() => {});
+  });
+
+  pi.on("model_select", async (event) => {
+    sim.setModelName(`${event.model.provider}/${event.model.id}`);
+  });
+
+  pi.on("thinking_level_select", async (event) => {
+    sim.setThinkingLevel(event.level);
   });
 
   pi.on("agent_start", async (_event, ctx) => {
+    latestCtx = ctx;
     lastAssistantText = "";
     await tracker.onRunStart();
     showStatus(ctx);
@@ -96,12 +175,12 @@ export default function (pi: ExtensionAPI) {
 
   // ── Dial: thinking level ───────────────────────────────────────────
 
-  const stepThinking = (ctx: ExtensionContext, direction: 1 | -1) => {
+  const stepThinking = (ctx: ExtensionContext | null, direction: 1 | -1) => {
     const current = pi.getThinkingLevel() as ThinkingLevel;
     const index = THINKING_LEVELS.indexOf(current);
     const next = THINKING_LEVELS[Math.min(THINKING_LEVELS.length - 1, Math.max(0, index + direction))];
     if (next !== current) pi.setThinkingLevel(next);
-    if (ctx.hasUI) ctx.ui.notify(`thinking: ${next}`, "info");
+    if (ctx?.hasUI) ctx.ui.notify(`thinking: ${next}`, "info");
   };
 
   pi.registerShortcut("ctrl+alt+=", {
@@ -151,10 +230,25 @@ export default function (pi: ExtensionAPI) {
   // ── /codex-micro command ───────────────────────────────────────────
 
   pi.registerCommand("codex-micro", {
-    description: "Codex Micro: status | connect | disconnect | test",
+    description: "Codex Micro: status | sim | sim stop | connect | disconnect | test",
     handler: async (args, ctx) => {
+      latestCtx = ctx;
       const sub = (args ?? "").trim() || "status";
       switch (sub) {
+        case "sim": {
+          const url = await sim.start();
+          // Mirror the current state so the page opens in sync.
+          await sim.setAgentState(config.agentSlot, tracker.state);
+          sim.setThinkingLevel(pi.getThinkingLevel());
+          await pi.exec("open", [url]).catch(() => {});
+          ctx.ui.notify(`Simulator running at ${url}`, "info");
+          break;
+        }
+        case "sim stop": {
+          await sim.stop();
+          ctx.ui.notify("Simulator stopped", "info");
+          break;
+        }
         case "status": {
           const lines = [
             `transport: ${transport.describe()}`,
@@ -178,17 +272,12 @@ export default function (pi: ExtensionAPI) {
           break;
         }
         case "test": {
-          const states: AgentState[] = ["idle", "thinking", "needs-input", "complete", "error", "idle"];
-          for (const state of states) {
-            await tracker.set(state);
-            showStatus(ctx);
-            await new Promise((resolve) => setTimeout(resolve, 600));
-          }
+          await runLedTest();
           ctx.ui.notify(`LED test cycled. Transport: ${transport.describe()}`, "info");
           break;
         }
         default:
-          ctx.ui.notify(`Unknown subcommand: ${sub}. Use status | connect | disconnect | test`, "error");
+          ctx.ui.notify(`Unknown subcommand: ${sub}. Use status | sim | sim stop | connect | disconnect | test`, "error");
       }
     },
   });
