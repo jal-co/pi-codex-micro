@@ -16,6 +16,7 @@ import { HidTransport } from "./hid-transport.js";
 import { MockTransport } from "./mock-transport.js";
 import { basename } from "node:path";
 import { SimConnection } from "./sim.js";
+import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
 import { detectTerminal } from "./terminal.js";
@@ -53,14 +54,28 @@ const STATE_ICONS: Record<AgentState, string> = {
   error: "✕",
 };
 
-/** Survives /reload and /new: the hub must not drop the port and reshuffle keys. */
-const globalSim = globalThis as { __codexMicroSim?: SimConnection };
+/**
+ * Survives /reload and /new so the hub keeps its port and agent keys
+ * stay put. Stamped with a build signature: if a reload brings new sim
+ * code (page, protocol, routing), the stale connection is torn down
+ * and rebuilt so updates actually apply; other sessions rejoin via
+ * their reconnect logic.
+ */
+const SIM_BUILD = `v1.${SIM_PAGE.length}`;
+const globalSim = globalThis as { __codexMicroSim?: { sim: SimConnection; build: string } };
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
   const terminal = detectTerminal(process.env, config.focusCommand);
-  const sim = globalSim.__codexMicroSim ?? new SimConnection((action) => handleSimAction(action));
-  globalSim.__codexMicroSim = sim;
+  const surviving = globalSim.__codexMicroSim;
+  let sim: SimConnection;
+  if (surviving && surviving.build === SIM_BUILD) {
+    sim = surviving.sim;
+  } else {
+    if (surviving) void surviving.sim.stop().catch(() => {});
+    sim = new SimConnection((action) => handleSimAction(action));
+  }
+  globalSim.__codexMicroSim = { sim, build: SIM_BUILD };
   sim.setActionHandler((action) => handleSimAction(action));
   const device: DeviceTransport =
     config.transport === "hid" ? new HidTransport(config) : new MockTransport();
