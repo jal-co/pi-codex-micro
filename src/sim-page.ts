@@ -3,9 +3,11 @@
  * Served by SimHub; talks SSE (/events) + POST (/action).
  *
  * Multi-agent: each connected pi session occupies one agent key.
- * Clicking an occupied key selects it; the joystick, dial, and command
- * keys act on the selected session, mirroring how the real device
- * assigns one agent per key.
+ * Clicking an occupied key selects it; double-clicking jumps to its
+ * zentty pane. The joystick, dial, and command keys act on the
+ * selected session, mirroring the real device's one-agent-per-key
+ * model. Agent keys are static DOM updated in place so broadcasts
+ * never restart animations or shift layout.
  */
 
 export const SIM_PAGE = /* html */ `<!doctype html>
@@ -100,6 +102,8 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   .agent[data-empty] .led { background: #33353e; }
   .agent[data-empty] small { color: #565a68; }
   .agent[data-empty]:hover { border-color: var(--key-border); box-shadow: none; }
+  .agent[data-offline] .led { opacity: 0.35; box-shadow: none; animation: none; }
+  .agent[data-offline] small { color: #565a68; }
   .agent[aria-pressed="true"] { border-color: var(--key-border-selected); box-shadow: 0 0 0 2px rgba(139,145,165,0.25); }
   .agent[aria-pressed="true"] small { color: var(--text); }
   @keyframes pulse { 50% { opacity: 0.45; } }
@@ -159,7 +163,12 @@ export const SIM_PAGE = /* html */ `<!doctype html>
 
   <div class="device">
     <div class="keys">
-      <div class="row" id="agents"></div>
+      <div class="row" id="agents">
+        <button class="key agent" data-slot="0" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+        <button class="key agent" data-slot="1" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+        <button class="key agent" data-slot="2" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+        <button class="key agent" data-slot="3" data-empty aria-pressed="false"><span class="cap"><span class="led"></span><small>OPEN</small></span></button>
+      </div>
       <div class="row">
         <button class="key" data-action='{"kind":"command","value":"accept"}'><span class="cap">✓<small>ACCEPT</small></span></button>
         <button class="key" data-action='{"kind":"interrupt"}'><span class="cap">✕<small>STOP</small></span></button>
@@ -201,7 +210,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     <span><i style="background:var(--needs-input)"></i>needs input</span>
     <span><i style="background:var(--error)"></i>error</span>
   </div>
-  <div class="log" id="log">click an agent key to target it · arrows = joystick · +/- = dial · 1-4 = select agent</div>
+  <div class="log" id="log">click agent = target · double-click = jump to pane · arrows = joystick · +/- = dial · 1-4 = select</div>
 </div>
 
 <script>
@@ -212,29 +221,34 @@ export const SIM_PAGE = /* html */ `<!doctype html>
   const log = (message) => { document.getElementById("log").textContent = message; };
   const selected = () => sessions.find((s) => s.id === selectedId) ?? null;
 
+  const agentKeys = [...document.querySelectorAll(".agent")];
+
   function render() {
     // Keep selection valid: fall back to the first occupied slot.
     if (!selected()) selectedId = sessions[0] ? sessions[0].id : null;
 
-    const row = document.getElementById("agents");
-    row.replaceChildren();
     for (let slot = 0; slot < SLOT_COUNT; slot += 1) {
+      const key = agentKeys[slot];
       const session = sessions.find((s) => s.slot === slot) ?? null;
-      const key = document.createElement("button");
-      key.className = "key agent";
-      key.dataset.state = session ? session.state : "idle";
-      if (!session) key.dataset.empty = "";
-      key.setAttribute("aria-pressed", String(Boolean(session && session.id === selectedId)));
-      const label = session ? session.name : "open";
-      key.innerHTML = '<span class="cap"><span class="led"></span><small></small></span>';
-      key.querySelector("small").textContent = label.toUpperCase();
+      const state = session ? session.state : "idle";
+      // Only touch attributes that changed; untouched LEDs keep pulsing.
+      if (key.dataset.state !== state) key.dataset.state = state;
       if (session) {
+        key.removeAttribute("data-empty");
+        key.disabled = false;
+        if (session.connected) key.removeAttribute("data-offline");
+        else key.setAttribute("data-offline", "");
         key.title = session.name + (session.model ? " · " + session.model : "");
-        key.addEventListener("click", () => { selectedId = session.id; render(); });
       } else {
+        key.setAttribute("data-empty", "");
+        key.removeAttribute("data-offline");
         key.disabled = true;
+        key.title = "";
       }
-      row.appendChild(key);
+      const label = session ? session.name.toUpperCase() : "OPEN";
+      const small = key.querySelector("small");
+      if (small.textContent !== label) small.textContent = label;
+      key.setAttribute("aria-pressed", String(Boolean(session && session.id === selectedId)));
     }
 
     const current = selected();
@@ -265,6 +279,19 @@ export const SIM_PAGE = /* html */ `<!doctype html>
 
   document.querySelectorAll("[data-action]").forEach((el) => {
     el.addEventListener("click", () => act(JSON.parse(el.dataset.action)));
+  });
+
+  agentKeys.forEach((key, slot) => {
+    key.addEventListener("click", () => {
+      const session = sessions.find((s) => s.slot === slot);
+      if (session) { selectedId = session.id; render(); }
+    });
+    key.addEventListener("dblclick", () => {
+      const session = sessions.find((s) => s.slot === slot);
+      if (!session) return;
+      log(session.name + ": jumping to pane");
+      fetch("/action", { method: "POST", body: JSON.stringify({ kind: "focus", sessionId: session.id }) }).catch(() => {});
+    });
   });
 
   document.addEventListener("keydown", (event) => {

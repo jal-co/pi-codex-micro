@@ -58,11 +58,35 @@ await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "joy
 await new Promise((r) => setTimeout(r, 200));
 check("action forwards to client", clientActions.some((a) => a.kind === "joystick" && a.value === "up"));
 
+// Sticky slots: dropping the stream keeps the key for the grace period
+client.close();
+await new Promise((r) => setTimeout(r, 200));
+const c2 = new AbortController();
+const events2 = await fetch(`${url}/events`, { signal: c2.signal });
+const chunk2 = new TextDecoder().decode((await events2.body!.getReader().read()).value);
+c2.abort();
+check("disconnected session keeps slot (grace)", chunk2.includes("pane-two") && chunk2.includes('"connected":false'));
+
+// Reconnect reclaims the same slot
+const client2 = new SimClient(url, "remote", "pane-two", () => {}, () => {});
+check("reconnect succeeds", await client2.connect());
+const c3 = new AbortController();
+const events3 = await fetch(`${url}/events`, { signal: c3.signal });
+const chunk3 = new TextDecoder().decode((await events3.body!.getReader().read()).value);
+c3.abort();
+const reconnected = /\{[^}]*"id":"remote"[^}]*\}/.exec(chunk3)?.[0] ?? "";
+check("same slot after reconnect", reconnected.includes('"slot":1') && reconnected.includes('"connected":true'));
+
 // Hub teardown triggers client disconnect callback
+let lost = false;
+const client3 = new SimClient(url, "remote-3", "pane-three", () => {}, () => (lost = true));
+check("third client registers", await client3.connect());
 await hub.stop();
 await new Promise((r) => setTimeout(r, 200));
-check("client detects hub loss", disconnected);
-client.close();
+check("client detects hub loss", lost);
+client2.close();
+client3.close();
+void disconnected;
 
 const failed = results.filter(([, ok]) => !ok).length;
 console.log(failed === 0 ? "all checks passed" : `${failed} checks FAILED`);

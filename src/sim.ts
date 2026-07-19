@@ -13,7 +13,7 @@
 
 import { SimClient } from "./sim-client.js";
 import { SimHub } from "./sim-server.js";
-import { SIM_PORT, type SimAction } from "./sim-shared.js";
+import { SIM_PORT, type PaneInfo, type SimAction } from "./sim-shared.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
 export type SimMode = "off" | "hub" | "client";
@@ -24,17 +24,31 @@ export class SimConnection implements DeviceTransport {
   private client: SimClient | null = null;
   private id = String(process.pid);
   private name = "agent";
+  private pane: PaneInfo = {};
+  private onAction: (action: SimAction) => void | Promise<void>;
   private lastState: AgentState = "idle";
   private lastThinking = "";
   private lastModel = "";
   private reconnecting = false;
   private stopped = true;
 
-  constructor(private readonly onAction: (action: SimAction) => void | Promise<void>) {}
+  constructor(onAction: (action: SimAction) => void | Promise<void>) {
+    this.onAction = onAction;
+  }
 
-  setIdentity(id: string, name: string): void {
+  setIdentity(id: string, name: string, pane: PaneInfo = {}): void {
     this.id = id;
     this.name = name;
+    this.pane = pane;
+  }
+
+  /**
+   * Rebind the action handler. Used when the extension reloads but the
+   * connection survives (it lives on globalThis across reloads); the
+   * old handler closes over dead extension state.
+   */
+  setActionHandler(onAction: (action: SimAction) => void | Promise<void>): void {
+    this.onAction = onAction;
   }
 
   getMode(): SimMode {
@@ -97,19 +111,26 @@ export class SimConnection implements DeviceTransport {
     if (this.mode !== "off") return this.mode;
 
     // Try to claim the port.
-    const hub = new SimHub(this.onAction);
+    const hub = new SimHub((action) => this.onAction(action));
     try {
       await hub.start(SIM_PORT);
       this.hub = hub;
       this.mode = "hub";
-      hub.registerLocal(this.id, this.name);
+      hub.registerLocal(this.id, this.name, this.pane);
       this.replay();
       return this.mode;
     } catch {
       // Port taken: join the existing hub as a client.
     }
 
-    const client = new SimClient(this.url(), this.id, this.name, this.onAction, () => this.scheduleReconnect());
+    const client = new SimClient(
+      this.url(),
+      this.id,
+      this.name,
+      (action) => this.onAction(action),
+      () => this.scheduleReconnect(),
+      this.pane,
+    );
     if (await client.connect()) {
       this.client = client;
       this.mode = "client";

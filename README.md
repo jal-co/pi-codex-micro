@@ -102,7 +102,12 @@ on its own.
 
 - **Agent keys** glow with each session's live state (thinking pulses
   amber, complete green, needs-input blue, error red); click one (or
-  press 1-4) to select which agent the controls target
+  press 1-4) to select which agent the controls target; double-click
+  to jump straight to that session's zentty pane
+- **Slots are sticky:** a dropped session keeps its key for 10 seconds
+  so reconnects, `/new`, and `/reload` never reshuffle the row; the
+  hub itself survives `/reload` and `/new` (it only shuts down when pi
+  exits), and keys dim while a session is briefly offline
 - **Joystick** arrows fire the selected session's four skill/prompt slots
 - **Dial** buttons step the selected session's thinking level (shown in
   the knob)

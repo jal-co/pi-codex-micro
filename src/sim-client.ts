@@ -5,7 +5,7 @@
  * POSTs, and executes actions the hub forwards.
  */
 
-import type { MetaRequest, SimAction } from "./sim-shared.js";
+import type { MetaRequest, PaneInfo, SimAction } from "./sim-shared.js";
 import type { AgentState } from "./transport.js";
 
 export class SimClient {
@@ -18,6 +18,7 @@ export class SimClient {
     private readonly name: string,
     private readonly onAction: (action: SimAction) => void | Promise<void>,
     private readonly onDisconnect: () => void,
+    private readonly pane: PaneInfo = {},
   ) {}
 
   isConnected(): boolean {
@@ -28,7 +29,10 @@ export class SimClient {
   async connect(): Promise<boolean> {
     if (this.controller) return this.registered;
     this.controller = new AbortController();
-    const url = `${this.base}/agent-events?id=${encodeURIComponent(this.id)}&name=${encodeURIComponent(this.name)}`;
+    const params = new URLSearchParams({ id: this.id, name: this.name });
+    if (this.pane.paneId) params.set("paneId", this.pane.paneId);
+    if (this.pane.windowId) params.set("windowId", this.pane.windowId);
+    const url = `${this.base}/agent-events?${params}`;
     try {
       const response = await fetch(url, { signal: this.controller.signal });
       if (!response.ok || !response.body) throw new Error(`hub responded ${response.status}`);

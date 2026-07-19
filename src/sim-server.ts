@@ -9,11 +9,14 @@
  * its slot frees and the page updates.
  */
 
+import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { SIM_PAGE } from "./sim-page.js";
 import {
   SLOT_COUNT,
+  SLOT_GRACE_MS,
+  type PaneInfo,
   type BrowserEvent,
   type MetaRequest,
   type RegisterRequest,
@@ -33,6 +36,11 @@ interface HubSession {
   /** SSE channel for forwarding actions to a remote session. Null for the hub's own session. */
   channel: ServerResponse | null;
   isLocal: boolean;
+  connected: boolean;
+  paneId?: string;
+  windowId?: string;
+  /** Pending removal after disconnect; cleared if the session reconnects. */
+  removeTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export class SimHub {
@@ -57,7 +65,10 @@ export class SimHub {
   async stop(): Promise<void> {
     for (const browser of this.browsers) browser.end();
     this.browsers.clear();
-    for (const session of this.sessions.values()) session.channel?.end();
+    for (const session of this.sessions.values()) {
+      session.channel?.end();
+      if (session.removeTimer) clearTimeout(session.removeTimer);
+    }
     this.sessions.clear();
     if (this.server) {
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
@@ -76,8 +87,8 @@ export class SimHub {
 
   // ── Local (hub-owned) session ──────────────────────────────────────
 
-  registerLocal(id: string, name: string): number {
-    return this.upsert(id, name, null, true);
+  registerLocal(id: string, name: string, pane?: PaneInfo): number {
+    return this.upsert(id, name, null, true, pane);
   }
 
   updateState(id: string, state: AgentState): void {
@@ -99,7 +110,23 @@ export class SimHub {
     const session = this.sessions.get(id);
     if (!session) return;
     session.channel?.end();
+    if (session.removeTimer) clearTimeout(session.removeTimer);
     this.sessions.delete(id);
+    this.broadcast();
+  }
+
+  /**
+   * Mark a session disconnected but keep its agent key for a grace
+   * period so reconnects (pane restarts, hub failover, /reload) come
+   * back to the same slot instead of reshuffling the row.
+   */
+  private markDisconnected(id: string): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.connected = false;
+    session.channel = null;
+    if (session.removeTimer) clearTimeout(session.removeTimer);
+    session.removeTimer = setTimeout(() => this.removeSession(id), SLOT_GRACE_MS);
     this.broadcast();
   }
 
@@ -109,10 +136,23 @@ export class SimHub {
 
   // ── Internals ──────────────────────────────────────────────────────
 
-  private upsert(id: string, name: string, channel: ServerResponse | null, isLocal: boolean): number {
+  private upsert(
+    id: string,
+    name: string,
+    channel: ServerResponse | null,
+    isLocal: boolean,
+    pane?: PaneInfo,
+  ): number {
     const existing = this.sessions.get(id);
     if (existing) {
       existing.name = name;
+      existing.connected = true;
+      if (pane?.paneId) existing.paneId = pane.paneId;
+      if (pane?.windowId) existing.windowId = pane.windowId;
+      if (existing.removeTimer) {
+        clearTimeout(existing.removeTimer);
+        existing.removeTimer = null;
+      }
       if (channel) {
         existing.channel?.end();
         existing.channel = channel;
@@ -138,6 +178,10 @@ export class SimHub {
       model: "",
       channel,
       isLocal,
+      connected: true,
+      paneId: pane?.paneId,
+      windowId: pane?.windowId,
+      removeTimer: null,
     });
     this.broadcast();
     return slot;
@@ -146,7 +190,26 @@ export class SimHub {
   private snapshot(): SessionSnapshot[] {
     return [...this.sessions.values()]
       .sort((a, b) => a.slot - b.slot)
-      .map(({ id, name, slot, state, thinking, model }) => ({ id, name, slot, state, thinking, model }));
+      .map(({ id, name, slot, state, thinking, model, connected }) => ({
+        id,
+        name,
+        slot,
+        state,
+        thinking,
+        model,
+        connected,
+      }));
+  }
+
+  /** Jump to a session's zentty pane, bringing the app forward. */
+  private focusPane(session: HubSession): void {
+    if (!session.paneId) return;
+    const bin = process.env.ZENTTY_CLI_BIN ?? "zentty";
+    const args = ["pane", "focus", "--pane-id", session.paneId];
+    if (session.windowId) args.push("--window-id", session.windowId);
+    execFile(bin, args, (error) => {
+      if (!error) execFile("open", ["-a", "Zentty"], () => {});
+    });
   }
 
   private broadcast(): void {
@@ -188,8 +251,12 @@ export class SimHub {
     if (req.method === "GET" && path === "/agent-events") {
       const id = url.searchParams.get("id") ?? "";
       const name = url.searchParams.get("name") ?? "agent";
+      const pane: PaneInfo = {
+        paneId: url.searchParams.get("paneId") ?? undefined,
+        windowId: url.searchParams.get("windowId") ?? undefined,
+      };
       this.sse(res);
-      const slot = this.upsert(id, name, res, false);
+      const slot = this.upsert(id, name, res, false, pane);
       if (slot === -1) {
         this.send(res, { type: "rejected", reason: "all agent keys in use" });
         res.end();
@@ -198,7 +265,7 @@ export class SimHub {
       this.send(res, { type: "registered", slot });
       req.on("close", () => {
         const session = this.sessions.get(id);
-        if (session && session.channel === res) this.removeSession(id);
+        if (session && session.channel === res) this.markDisconnected(id);
       });
       return;
     }
@@ -219,7 +286,7 @@ export class SimHub {
 
     if (req.method === "POST" && path === "/register") {
       const body = JSON.parse(await readBody(req)) as RegisterRequest;
-      const slot = this.upsert(body.id, body.name, null, false);
+      const slot = this.upsert(body.id, body.name, null, false, body);
       res.writeHead(slot === -1 ? 409 : 200, { "content-type": "application/json" });
       res.end(JSON.stringify({ slot }));
       return;
@@ -229,7 +296,9 @@ export class SimHub {
       try {
         const action = JSON.parse(await readBody(req)) as SimAction;
         const target = action.sessionId ? this.sessions.get(action.sessionId) : null;
-        if (target && !target.isLocal && target.channel) {
+        if (action.kind === "focus") {
+          if (target) this.focusPane(target);
+        } else if (target && !target.isLocal && target.channel) {
           this.send(target.channel, { type: "action", action });
         } else if (target?.isLocal || !action.sessionId) {
           await this.onLocalAction(action);

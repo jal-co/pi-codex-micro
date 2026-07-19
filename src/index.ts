@@ -52,9 +52,14 @@ const STATE_ICONS: Record<AgentState, string> = {
   error: "✕",
 };
 
+/** Survives /reload and /new: the hub must not drop the port and reshuffle keys. */
+const globalSim = globalThis as { __codexMicroSim?: SimConnection };
+
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
-  const sim = new SimConnection((action) => handleSimAction(action));
+  const sim = globalSim.__codexMicroSim ?? new SimConnection((action) => handleSimAction(action));
+  globalSim.__codexMicroSim = sim;
+  sim.setActionHandler((action) => handleSimAction(action));
   const device: DeviceTransport =
     config.transport === "hid" ? new HidTransport(config) : new MockTransport();
   const transport: DeviceTransport = new MultiTransport([device, sim]);
@@ -115,7 +120,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     latestCtx = ctx;
-    sim.setIdentity(String(process.pid), basename(ctx.cwd));
+    sim.setIdentity(String(process.pid), basename(ctx.cwd), {
+      paneId: process.env.ZENTTY_PANE_ID,
+      windowId: process.env.ZENTTY_WINDOW_ID,
+    });
     await transport.connect();
     await tracker.set("idle");
     // Auto-join a running simulator so every zentty pane shows up
@@ -125,11 +133,18 @@ export default function (pi: ExtensionAPI) {
     showStatus(ctx);
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (event) => {
     latestCtx = null;
     await tracker.set("idle").catch(() => {});
-    await transport.disconnect().catch(() => {});
-    await sim.stop().catch(() => {});
+    await device.disconnect().catch(() => {});
+    // Only tear the sim down when pi actually exits. /new, /resume,
+    // /fork, and /reload replace the extension instance in the same
+    // process; the connection lives on globalThis and carries over,
+    // so the hub keeps the port and agent keys stay put.
+    if (event.reason === "quit") {
+      await sim.stop().catch(() => {});
+      globalSim.__codexMicroSim = undefined;
+    }
   });
 
   pi.on("model_select", async (event) => {
