@@ -172,7 +172,12 @@ export default function (pi: ExtensionAPI) {
     // process; the connection lives on globalThis and carries over,
     // so the hub keeps the port and agent keys stay put.
     if (event.reason === "quit") {
-      await sim.stop().catch(() => {});
+      // Belt and braces: never let sim teardown block pi's exit. The
+      // server dies with the process regardless.
+      await Promise.race([
+        sim.stop(),
+        new Promise<void>((resolve) => setTimeout(resolve, 1500).unref()),
+      ]).catch(() => {});
       globalSim.__codexMicroSim = undefined;
     }
   });

@@ -70,6 +70,10 @@ export class SimHub {
     }
     this.sessions.clear();
     if (this.server) {
+      // close() alone waits for idle keep-alive sockets (browser and
+      // client fetch pools), which would hang pi's exit. Sever them.
+      this.server.closeIdleConnections?.();
+      this.server.closeAllConnections?.();
       await new Promise<void>((resolve) => this.server!.close(() => resolve()));
       this.server = null;
     }
