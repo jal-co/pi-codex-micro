@@ -119,12 +119,19 @@ Joystick and command-key values are sent as pi input, so slash commands,
 
 Run `/codex-micro sim` in pi. A local page opens showing the device.
 
-The first session to run it hosts the hub on port 7327; every other pi
-session auto-joins at startup (or via `/codex-micro sim`, which reports
-it joined instead of opening a second window). Each session takes one
-agent key, labeled with its project directory. If the hosting session
-exits, a remaining session takes over the port and the page reconnects
-on its own.
+The session that runs it hosts the hub on port 7327; every other pi
+session auto-joins on creation (and keeps probing, so sessions started
+before the sim hop on within seconds). Each session takes one agent
+key, labeled with its project directory. Sessions never host on their
+own: when the pi hosting the sim exits, the sim dies with it, and the
+remaining sessions go dormant until someone runs `/codex-micro sim`
+again. The one exception is `/reload` of the hosting pane, which
+re-hosts in place so code upgrades apply without killing the page.
+
+The page renders the real face plate: dial top-left, joystick
+top-right, accept/stop keys up top, six agent keys across rows two
+and three, two custom keys, the mic touch sensor, the wide new-chat
+key, and a test key. Hit areas sit invisibly over the drawn controls.
 
 - **Agent keys** glow with each session's live state (thinking pulses
   amber, complete green, needs-input blue, error red); click one to

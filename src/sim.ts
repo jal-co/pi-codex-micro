@@ -32,6 +32,7 @@ export class SimConnection implements DeviceTransport {
   private reconnecting = false;
   private stopped = true;
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private preferHost = false;
 
   constructor(
     onAction: (action: SimAction) => void | Promise<void>,
@@ -146,14 +147,30 @@ export class SimConnection implements DeviceTransport {
   }
 
   /**
-   * Keep trying to join the mesh while offline. Covers sessions that
-   * lost the hub race for a full slot row, or started while all four
-   * agent keys were taken: they join as soon as a key frees up.
+   * Mark that this session should host on its next auto-connect.
+   * Used when a reload rebuilds a connection that was hosting, so an
+   * upgrade re-hosts but a normal exit kills the sim for good.
+   */
+  markPreferHost(): void {
+    this.preferHost = true;
+  }
+
+  consumePreferHost(): boolean {
+    const value = this.preferHost;
+    this.preferHost = false;
+    return value;
+  }
+
+  /**
+   * While offline, keep probing for a running sim and join it. This
+   * never hosts: covers sessions that started before the sim existed,
+   * or found all agent keys taken, without resurrecting a sim the
+   * user shut down by exiting its host.
    */
   keepAlive(intervalMs = 15_000): void {
     if (this.keepAliveTimer) return;
     this.keepAliveTimer = setInterval(() => {
-      if (this.mode === "off" && !this.stopped) void this.ensure();
+      if (this.mode === "off" && !this.stopped) void this.probe();
     }, intervalMs);
     this.keepAliveTimer.unref();
   }
@@ -219,7 +236,9 @@ export class SimConnection implements DeviceTransport {
     this.mode = "off";
     setTimeout(() => {
       this.reconnecting = false;
-      if (!this.stopped) void this.ensure();
+      // Probe, don't ensure: if the hub died because its pi exited,
+      // the sim stays dead instead of being adopted by this session.
+      if (!this.stopped) void this.probe();
     }, 1000 + Math.random() * 1000);
   }
 }

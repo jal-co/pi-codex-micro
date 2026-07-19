@@ -72,8 +72,13 @@ export default function (pi: ExtensionAPI) {
   if (surviving && surviving.build === SIM_BUILD) {
     sim = surviving.sim;
   } else {
-    if (surviving) void surviving.sim.stop().catch(() => {});
     sim = new SimConnection((action) => handleSimAction(action));
+    if (surviving) {
+      // A reload replaced hub code: re-host after the stale hub stops
+      // (upgrade in place). A plain exit still kills the sim for good.
+      if (surviving.sim.getMode() === "hub") sim.markPreferHost();
+      void surviving.sim.stop().catch(() => {});
+    }
   }
   globalSim.__codexMicroSim = { sim, build: SIM_BUILD };
   sim.setActionHandler((action) => handleSimAction(action));
@@ -151,13 +156,13 @@ export default function (pi: ExtensionAPI) {
     // Skip print/json modes so scripted pi runs don't bind ports.
     // Interactive sessions only: print/json runs are transient and
     // should never appear as agent keys or bind the hub port.
-    if (ctx.hasUI) {
-      if (config.autoStart) {
-        await sim.ensure();
-        sim.keepAlive();
-      } else {
-        await sim.probe();
-      }
+    // Sessions JOIN a running sim automatically but never host one;
+    // hosting is explicit (/codex-micro sim) or a hub upgrading
+    // across /reload. Exiting the hosting pi kills the sim.
+    if (ctx.hasUI && config.autoStart) {
+      if (sim.consumePreferHost()) await sim.ensure();
+      else await sim.probe();
+      sim.keepAlive();
     }
     sim.setThinkingLevel(pi.getThinkingLevel());
     showStatus(ctx);

@@ -134,8 +134,19 @@ const modeA = await meshA.ensure();
 const modeB = await meshB.ensure();
 check("first ensure hosts hub", modeA === "hub");
 check("second ensure joins as client", modeB === "client");
-await meshB.stop();
+
+// No adoption: when the host stops, the survivor must NOT re-host
 await meshA.stop();
+await new Promise((r) => setTimeout(r, 2600)); // past the reconnect window
+check("survivor does not adopt the port", meshB.getMode() === "off");
+let portFree = false;
+try {
+  await fetch(`http://127.0.0.1:${MESH_PORT}/ping`, { signal: AbortSignal.timeout(400) });
+} catch {
+  portFree = true;
+}
+check("sim port dead after host exit", portFree);
+await meshB.stop();
 
 const failed = results.filter(([, ok]) => !ok).length;
 console.log(failed === 0 ? "all checks passed" : `${failed} checks FAILED`);
