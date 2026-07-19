@@ -13,7 +13,7 @@
 
 import { SimClient } from "./sim-client.js";
 import { SimHub } from "./sim-server.js";
-import { SIM_PORT, type PaneInfo, type SimAction } from "./sim-shared.js";
+import { SIM_PORT, type FocusInfo, type SimAction } from "./sim-shared.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
 export type SimMode = "off" | "hub" | "client";
@@ -24,7 +24,7 @@ export class SimConnection implements DeviceTransport {
   private client: SimClient | null = null;
   private id = String(process.pid);
   private name = "agent";
-  private pane: PaneInfo = {};
+  private info: FocusInfo = {};
   private onAction: (action: SimAction) => void | Promise<void>;
   private lastState: AgentState = "idle";
   private lastThinking = "";
@@ -36,10 +36,10 @@ export class SimConnection implements DeviceTransport {
     this.onAction = onAction;
   }
 
-  setIdentity(id: string, name: string, pane: PaneInfo = {}): void {
+  setIdentity(id: string, name: string, info: FocusInfo = {}): void {
     this.id = id;
     this.name = name;
-    this.pane = pane;
+    this.info = info;
   }
 
   /**
@@ -116,7 +116,7 @@ export class SimConnection implements DeviceTransport {
       await hub.start(SIM_PORT);
       this.hub = hub;
       this.mode = "hub";
-      hub.registerLocal(this.id, this.name, this.pane);
+      hub.registerLocal(this.id, this.name, this.info);
       this.replay();
       return this.mode;
     } catch {
@@ -129,7 +129,7 @@ export class SimConnection implements DeviceTransport {
       this.name,
       (action) => this.onAction(action),
       () => this.scheduleReconnect(),
-      this.pane,
+      this.info,
     );
     if (await client.connect()) {
       this.client = client;

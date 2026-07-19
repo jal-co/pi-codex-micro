@@ -9,14 +9,13 @@
  * its slot frees and the page updates.
  */
 
-import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { SIM_PAGE } from "./sim-page.js";
 import {
   SLOT_COUNT,
   SLOT_GRACE_MS,
-  type PaneInfo,
+  type FocusInfo,
   type BrowserEvent,
   type MetaRequest,
   type RegisterRequest,
@@ -37,8 +36,8 @@ interface HubSession {
   channel: ServerResponse | null;
   isLocal: boolean;
   connected: boolean;
-  paneId?: string;
-  windowId?: string;
+  canFocus: boolean;
+  terminal: string;
   /** Pending removal after disconnect; cleared if the session reconnects. */
   removeTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -87,8 +86,8 @@ export class SimHub {
 
   // ── Local (hub-owned) session ──────────────────────────────────────
 
-  registerLocal(id: string, name: string, pane?: PaneInfo): number {
-    return this.upsert(id, name, null, true, pane);
+  registerLocal(id: string, name: string, info?: FocusInfo): number {
+    return this.upsert(id, name, null, true, info);
   }
 
   updateState(id: string, state: AgentState): void {
@@ -141,14 +140,14 @@ export class SimHub {
     name: string,
     channel: ServerResponse | null,
     isLocal: boolean,
-    pane?: PaneInfo,
+    info?: FocusInfo,
   ): number {
     const existing = this.sessions.get(id);
     if (existing) {
       existing.name = name;
       existing.connected = true;
-      if (pane?.paneId) existing.paneId = pane.paneId;
-      if (pane?.windowId) existing.windowId = pane.windowId;
+      if (info?.canFocus !== undefined) existing.canFocus = info.canFocus;
+      if (info?.terminal) existing.terminal = info.terminal;
       if (existing.removeTimer) {
         clearTimeout(existing.removeTimer);
         existing.removeTimer = null;
@@ -179,8 +178,8 @@ export class SimHub {
       channel,
       isLocal,
       connected: true,
-      paneId: pane?.paneId,
-      windowId: pane?.windowId,
+      canFocus: info?.canFocus ?? false,
+      terminal: info?.terminal ?? "",
       removeTimer: null,
     });
     this.broadcast();
@@ -190,7 +189,7 @@ export class SimHub {
   private snapshot(): SessionSnapshot[] {
     return [...this.sessions.values()]
       .sort((a, b) => a.slot - b.slot)
-      .map(({ id, name, slot, state, thinking, model, connected }) => ({
+      .map(({ id, name, slot, state, thinking, model, connected, canFocus, terminal }) => ({
         id,
         name,
         slot,
@@ -198,18 +197,9 @@ export class SimHub {
         thinking,
         model,
         connected,
+        canFocus,
+        terminal,
       }));
-  }
-
-  /** Jump to a session's zentty pane, bringing the app forward. */
-  private focusPane(session: HubSession): void {
-    if (!session.paneId) return;
-    const bin = process.env.ZENTTY_CLI_BIN ?? "zentty";
-    const args = ["pane", "focus", "--pane-id", session.paneId];
-    if (session.windowId) args.push("--window-id", session.windowId);
-    execFile(bin, args, (error) => {
-      if (!error) execFile("open", ["-a", "Zentty"], () => {});
-    });
   }
 
   private broadcast(): void {
@@ -251,12 +241,12 @@ export class SimHub {
     if (req.method === "GET" && path === "/agent-events") {
       const id = url.searchParams.get("id") ?? "";
       const name = url.searchParams.get("name") ?? "agent";
-      const pane: PaneInfo = {
-        paneId: url.searchParams.get("paneId") ?? undefined,
-        windowId: url.searchParams.get("windowId") ?? undefined,
+      const info: FocusInfo = {
+        canFocus: url.searchParams.get("canFocus") === "1",
+        terminal: url.searchParams.get("terminal") ?? undefined,
       };
       this.sse(res);
-      const slot = this.upsert(id, name, res, false, pane);
+      const slot = this.upsert(id, name, res, false, info);
       if (slot === -1) {
         this.send(res, { type: "rejected", reason: "all agent keys in use" });
         res.end();
@@ -296,9 +286,9 @@ export class SimHub {
       try {
         const action = JSON.parse(await readBody(req)) as SimAction;
         const target = action.sessionId ? this.sessions.get(action.sessionId) : null;
-        if (action.kind === "focus") {
-          if (target) this.focusPane(target);
-        } else if (target && !target.isLocal && target.channel) {
+        // Focus is routed like every other action: the owning session
+        // executes it with its own terminal adapter.
+        if (target && !target.isLocal && target.channel) {
           this.send(target.channel, { type: "action", action });
         } else if (target?.isLocal || !action.sessionId) {
           await this.onLocalAction(action);

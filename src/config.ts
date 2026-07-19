@@ -24,6 +24,11 @@ export interface MicroConfig {
   joystick: { up: string; down: string; left: string; right: string };
   /** Extra command keys -> pi input to send (keyed by shortcut). */
   commandKeys: Record<string, string>;
+  /**
+   * Custom pane-focus command as an argv array, overriding terminal
+   * auto-detection. Example: ["tmux", "select-pane", "-t", "%3"].
+   */
+  focusCommand?: string[];
 }
 
 export const DEFAULT_CONFIG: MicroConfig = {

@@ -238,7 +238,10 @@ export const SIM_PAGE = /* html */ `<!doctype html>
         key.disabled = false;
         if (session.connected) key.removeAttribute("data-offline");
         else key.setAttribute("data-offline", "");
-        key.title = session.name + (session.model ? " · " + session.model : "");
+        const parts = [session.name];
+        if (session.model) parts.push(session.model);
+        if (session.terminal) parts.push(session.terminal);
+        key.title = parts.join(" · ");
       } else {
         key.setAttribute("data-empty", "");
         key.removeAttribute("data-offline");
@@ -289,6 +292,7 @@ export const SIM_PAGE = /* html */ `<!doctype html>
     key.addEventListener("dblclick", () => {
       const session = sessions.find((s) => s.slot === slot);
       if (!session) return;
+      if (!session.canFocus) { log(session.name + ": pane focus not supported here"); return; }
       log(session.name + ": jumping to pane");
       fetch("/action", { method: "POST", body: JSON.stringify({ kind: "focus", sessionId: session.id }) }).catch(() => {});
     });

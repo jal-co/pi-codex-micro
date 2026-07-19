@@ -18,6 +18,7 @@ import { basename } from "node:path";
 import { SimConnection } from "./sim.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
+import { detectTerminal } from "./terminal.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
 /** Fans state changes out to the real transport and the simulator. */
@@ -57,6 +58,7 @@ const globalSim = globalThis as { __codexMicroSim?: SimConnection };
 
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
+  const terminal = detectTerminal(process.env, config.focusCommand);
   const sim = globalSim.__codexMicroSim ?? new SimConnection((action) => handleSimAction(action));
   globalSim.__codexMicroSim = sim;
   sim.setActionHandler((action) => handleSimAction(action));
@@ -79,6 +81,9 @@ export default function (pi: ExtensionAPI) {
         break;
       case "interrupt":
         latestCtx?.abort();
+        break;
+      case "focus":
+        await terminal.focus();
         break;
       case "command": {
         if (action.value === "test") {
@@ -121,8 +126,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     latestCtx = ctx;
     sim.setIdentity(String(process.pid), basename(ctx.cwd), {
-      paneId: process.env.ZENTTY_PANE_ID,
-      windowId: process.env.ZENTTY_WINDOW_ID,
+      canFocus: terminal.canFocus,
+      terminal: terminal.name,
     });
     await transport.connect();
     await tracker.set("idle");

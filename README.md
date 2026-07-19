@@ -66,6 +66,32 @@ Push-to-talk is handled on the OS side (map the touch sensor to your
 dictation hotkey); the transcript lands in pi's editor like any typed
 prompt.
 
+## Terminal support
+
+Pane jumping is terminal-agnostic: each pi session detects its own
+terminal at startup and executes its own focus command when the sim
+forwards a jump, so panes in different terminals coexist on one page.
+
+| Terminal | Detection | Jump behavior |
+|---|---|---|
+| Zentty | `ZENTTY_PANE_ID` | Focus exact pane + activate app |
+| tmux | `TMUX_PANE` | Select window + pane + client |
+| WezTerm | `WEZTERM_PANE` | `wezterm cli activate-pane` |
+| Kitty | `KITTY_WINDOW_ID` | `kitten @ focus-window` (needs `allow_remote_control`) |
+| iTerm2 / Terminal / Ghostty / VS Code / Warp / others | `TERM_PROGRAM` | Activate the app (no pane API) |
+| Anything else | `focusCommand` config | Runs your argv as-is |
+
+Custom override in `codex-micro.json`:
+
+```json
+{
+  "focusCommand": ["tmux", "select-pane", "-t", "%3"]
+}
+```
+
+Sessions that cannot focus still show up on the page; the jump
+affordance just reports it is unavailable.
+
 ## Configuration
 
 `~/.pi/agent/codex-micro.json` (all fields optional):
@@ -103,7 +129,7 @@ on its own.
 - **Agent keys** glow with each session's live state (thinking pulses
   amber, complete green, needs-input blue, error red); click one (or
   press 1-4) to select which agent the controls target; double-click
-  to jump straight to that session's zentty pane
+  to jump straight to that session's terminal pane
 - **Slots are sticky:** a dropped session keeps its key for 10 seconds
   so reconnects, `/new`, and `/reload` never reshuffle the row; the
   hub itself survives `/reload` and `/new` (it only shuts down when pi
@@ -158,6 +184,7 @@ src/
   sim-client.ts     client for sessions joining an existing hub
   sim-shared.ts     wire types, fixed port, slot count
   sim-page.ts       simulator device page (single-file HTML)
+  terminal.ts       terminal detection + pane-focus adapters
   config.ts         ~/.pi/agent/codex-micro.json loader
 scripts/
   sim-smoke.ts      headless simulator smoke test

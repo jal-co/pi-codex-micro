@@ -29,12 +29,18 @@ export interface SessionSnapshot {
   thinking: string;
   model: string;
   connected: boolean;
+  canFocus: boolean;
+  terminal: string;
 }
 
-/** Zentty pane identity, reported by each session for pane focusing. */
-export interface PaneInfo {
-  paneId?: string;
-  windowId?: string;
+/**
+ * Focus capability, reported by each session at registration. The
+ * session itself executes the focus (it knows its own terminal); the
+ * hub only needs to know whether to offer the affordance.
+ */
+export interface FocusInfo {
+  canFocus?: boolean;
+  terminal?: string;
 }
 
 /** SSE payloads pushed to the browser. */
@@ -42,7 +48,7 @@ export type BrowserEvent =
   | { type: "hello" }
   | { type: "sessions"; sessions: SessionSnapshot[] };
 
-export interface RegisterRequest extends PaneInfo {
+export interface RegisterRequest extends FocusInfo {
   id: string;
   name: string;
 }

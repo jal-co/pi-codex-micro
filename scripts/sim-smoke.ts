@@ -10,12 +10,22 @@
 import { SimClient } from "../src/sim-client.js";
 import { SimHub } from "../src/sim-server.js";
 import type { SimAction } from "../src/sim-shared.js";
+import { detectTerminal } from "../src/terminal.js";
 
 const results: Array<[string, boolean]> = [];
 const check = (name: string, ok: boolean) => {
   results.push([name, ok]);
   console.log(`${ok ? "ok " : "FAIL"} ${name}`);
 };
+
+// Terminal detection (pure, env-driven)
+check("detects zentty", detectTerminal({ ZENTTY_PANE_ID: "pn_x" }).name === "zentty");
+check("detects tmux", detectTerminal({ TMUX: "/tmp/t", TMUX_PANE: "%1" }).name === "tmux");
+check("detects wezterm", detectTerminal({ WEZTERM_PANE: "3" }).name === "wezterm");
+check("detects kitty", detectTerminal({ KITTY_WINDOW_ID: "2" }).name === "kitty");
+check("falls back to app activation", detectTerminal({ TERM_PROGRAM: "iTerm.app" }).name === "iterm");
+check("custom focusCommand wins", detectTerminal({ ZENTTY_PANE_ID: "x" }, ["true"]).name === "custom");
+check("unknown cannot focus", detectTerminal({}).canFocus === false);
 
 const hubActions: SimAction[] = [];
 const hub = new SimHub((a) => void hubActions.push(a));
@@ -34,7 +44,14 @@ check("local session gets slot 0", slot0 === 0);
 // Remote client registers via SSE channel and takes slot 1
 const clientActions: SimAction[] = [];
 let disconnected = false;
-const client = new SimClient(url, "remote", "pane-two", (a) => void clientActions.push(a), () => (disconnected = true));
+const client = new SimClient(
+  url,
+  "remote",
+  "pane-two",
+  (a) => void clientActions.push(a),
+  () => (disconnected = true),
+  { canFocus: true, terminal: "tmux" },
+);
 check("client registers", await client.connect());
 
 // State pushes broadcast to browser stream
@@ -47,6 +64,7 @@ check(
   "browser snapshot has both sessions",
   chunk.includes("hub-session") && chunk.includes("pane-two") && chunk.includes('"thinking"'),
 );
+check("snapshot carries focus info", chunk.includes('"canFocus":true') && chunk.includes('"terminal":"tmux"'));
 
 // Actions route: to hub-local session
 await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "dial", value: "cw", sessionId: "local" }) });
@@ -57,6 +75,11 @@ check("action routes to local", hubActions.some((a) => a.kind === "dial"));
 await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "joystick", value: "up", sessionId: "remote" }) });
 await new Promise((r) => setTimeout(r, 200));
 check("action forwards to client", clientActions.some((a) => a.kind === "joystick" && a.value === "up"));
+
+// Focus routes to the owning session, not the hub
+await fetch(`${url}/action`, { method: "POST", body: JSON.stringify({ kind: "focus", sessionId: "remote" }) });
+await new Promise((r) => setTimeout(r, 200));
+check("focus forwards to owning client", clientActions.some((a) => a.kind === "focus"));
 
 // Sticky slots: dropping the stream keeps the key for the grace period
 client.close();
