@@ -1,0 +1,28 @@
+{
+  "name": "pi-codex-micro",
+  "version": "0.1.0",
+  "description": "Pi extension for the Work Louder Codex Micro: command keys, dial, joystick input, and two-way agent-state LED feedback.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "codex-micro",
+    "worklouder",
+    "macropad",
+    "hid"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {
+    "node-hid": "^3.1.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.10",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}
