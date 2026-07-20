@@ -54,6 +54,15 @@ const STATE_ICONS: Record<AgentState, string> = {
   error: "✕",
 };
 
+/** Footer icon color per state, matching the simulator LED palette. */
+const STATE_COLORS: Record<AgentState, "dim" | "accent" | "success" | "warning" | "error"> = {
+  idle: "dim",
+  thinking: "accent",
+  complete: "success",
+  "needs-input": "warning",
+  error: "error",
+};
+
 /**
  * Survives /reload and /new so the hub keeps its port and agent keys
  * stay put. Stamped with a build signature: if a reload brings new sim
@@ -135,9 +144,10 @@ export default function (pi: ExtensionAPI) {
 
   const showStatus = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
+    const icon = ctx.ui.theme.fg(STATE_COLORS[tracker.state], STATE_ICONS[tracker.state]);
     ctx.ui.setStatus(
       "codex-micro",
-      `micro ${STATE_ICONS[tracker.state]} ${tracker.state}${transport.isConnected() ? "" : " (offline)"}`,
+      `micro ${icon} ${tracker.state}${transport.isConnected() ? "" : " (offline)"}`,
     );
   };
 
