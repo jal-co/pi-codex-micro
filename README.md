@@ -1,8 +1,23 @@
-# pi-codex-micro
+<p align="center">
+  <a href="https://worklouder.cc/codex-micro">
+    <img src="assets/header.png" alt="pi-codex-micro: the Work Louder Codex Micro wired into pi" />
+  </a>
+</p>
 
-[Work Louder Codex Micro](https://worklouder.cc/codex-micro) support for
-[pi](https://github.com/badlogic/pi-mono). Command keys, dial, and
-joystick drive pi; pi drives the agent-state LEDs back.
+<p align="center">
+  Command keys, dial, and joystick drive <a href="https://github.com/badlogic/pi-mono">pi</a>; pi drives the agent-state LEDs back.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/pi-codex-micro"><img src="https://shieldcn.dev/npm/pi-codex-micro.svg?size=xs&variant=secondary" alt="npm version" /></a>
+  <a href="LICENSE"><img src="https://shieldcn.dev/github/license/jal-co/pi-codex-micro.svg?size=xs&variant=secondary" alt="license" /></a>
+  <a href="https://github.com/jal-co/pi-codex-micro/commits/main"><img src="https://shieldcn.dev/github/last-commit/jal-co/pi-codex-micro.svg?size=xs&variant=secondary" alt="last commit" /></a>
+  <a href="https://github.com/badlogic/pi-mono"><img src="https://shieldcn.dev/badge/pi-extension-8b5cf6.svg?size=xs&variant=branded" alt="pi extension" /></a>
+  <a href="https://worklouder.cc/codex-micro"><img src="https://shieldcn.dev/badge/Work_Louder-Codex_Micro-ff3d00.svg?size=xs&variant=branded" alt="Work Louder Codex Micro" /></a>
+  <a href="https://openai.com"><img src="https://shieldcn.dev/badge/OpenAI-Codex-412991.svg?size=xs&variant=branded&logo=openai" alt="OpenAI Codex" /></a>
+</p>
+
+---
 
 ## Status
 
@@ -128,15 +143,17 @@ remaining sessions go dormant until someone runs `/codex-micro sim`
 again. The one exception is `/reload` of the hosting pane, which
 re-hosts in place so code upgrades apply without killing the page.
 
-The page renders the real face plate: dial top-left, joystick
-top-right, accept/stop keys up top, six agent keys across rows two
-and three, two custom keys, the mic touch sensor, the wide new-chat
-key, and a test key. Hit areas sit invisibly over the drawn controls.
+The page renders the device entirely in CSS after the real hardware:
+white case, frosted plate with corner screws and edge text, dial
+top-left, joystick top-right, six translucent RGB agent keys (two on
+the top row, four on row two), a row of white icon keys, the mic
+cluster, the wide "Let's build" key, and the test key. The case
+exterior glows in the selected agent's state color.
 
 - **Agent keys** glow with each session's live state (thinking pulses
   amber, complete green, needs-input blue, error red); click one to
   jump straight to that session's terminal pane, like pressing an
-  agent key on the real device; shift-click or the 1-4 number keys
+  agent key on the real device; shift-click or the 1-6 number keys
   target an agent for the controls without switching panes; clicking
   a dimmed (disconnected) key removes it immediately
 - **Six agent keys**, matching the device; sessions beyond six wait
@@ -146,13 +163,13 @@ key, and a test key. Hit areas sit invisibly over the drawn controls.
   hub itself survives `/reload` and `/new` (it only shuts down when pi
   exits), and keys dim while a session is briefly offline
 - **Joystick** arrows fire the selected session's four skill/prompt slots
-- **Dial** buttons step the selected session's thinking level (shown in
-  the knob)
-- **ACCEPT / STOP / NEW / TEST** command keys: accept sends
-  `commandKeys["sim:accept"]` (default "Looks good, proceed."), stop
-  aborts the current run, new sends `commandKeys["sim:new"]`
-  (default `/new`), test cycles all LED states
-- **Keys 1-4** send `commandKeys["sim:k1"]` through `sim:k4`
+- **Dial** halves step the selected session's thinking level
+- **Icon keys**: check accepts (`commandKeys["sim:accept"]`, default
+  "Looks good, proceed."), cross aborts the current run, the wide mic
+  key sends `commandKeys["sim:new"]` (default `/new`), and the
+  scribble key cycles all LED states
+- **Lightning / arrow keys** send `commandKeys["sim:k1"]` and
+  `commandKeys["sim:k2"]`
 - Keyboard works too: arrows = joystick, `+`/`-` = dial, Esc = stop
 
 State flows over Server-Sent Events; clicks POST back into the
@@ -201,6 +218,18 @@ src/
   config.ts         ~/.pi/agent/codex-micro.json loader
 scripts/
   sim-smoke.ts      headless simulator smoke test
+  tegami.mts        release configuration
 docs/
   protocol-discovery.md  reverse-engineering plan
 ```
+
+## Releases
+
+Releases run through [Tegami](https://tegami.fuma-nama.dev). Write a
+changelog file under `.tegami/` with your change; CI opens a Version
+Packages PR on main, and merging it publishes to npm and cuts a GitHub
+release.
+
+## License
+
+[MIT](LICENSE)
