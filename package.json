@@ -12,6 +12,18 @@
     "macropad",
     "hid"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jal-co/pi-codex-micro.git"
+  },
+  "files": [
+    "src",
+    "assets",
+    "README.md"
+  ],
+  "scripts": {
+    "tegami": "node scripts/tegami.mts"
+  },
   "pi": {
     "extensions": [
       "./src/index.ts"
@@ -23,6 +35,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.10",
     "@types/node": "^22.0.0",
+    "tegami": "^1.2.5",
     "tsx": "^4.23.1",
     "typescript": "^5.7.0"
   }
