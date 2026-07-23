@@ -18,6 +18,17 @@ fi
 
 mkdir -p "$(dirname "$PLIST")" "$LOG_DIR"
 
+# Compile the Swift helpers the bindings and focus logic rely on.
+if command -v swiftc >/dev/null 2>&1; then
+  for helper in frontapp fnkey keysend; do
+    if [ -f "$REPO/scripts/$helper.swift" ]; then
+      swiftc -O "$REPO/scripts/$helper.swift" -o "$LOG_DIR/$helper" && echo "built $helper"
+    fi
+  done
+else
+  echo "swiftc not found — install Xcode CLT to build key helpers." >&2
+fi
+
 cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

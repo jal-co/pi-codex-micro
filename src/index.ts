@@ -22,8 +22,9 @@ import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
 import { acquireSlot, releaseSlot, staleSlots } from "./slots.js";
+import { isHostFrontmost } from "./focus.js";
 import { detectTerminal } from "./terminal.js";
-import type { AgentState, DeviceTransport } from "./transport.js";
+import type { AgentState, DeviceEvent, DeviceTransport } from "./transport.js";
 
 /** Fans state changes out to the real transport and the simulator. */
 class MultiTransport implements DeviceTransport {
@@ -124,6 +125,14 @@ export default function (pi: ExtensionAPI) {
   // Direct device-key bindings over the vendor HID channel.
   let joystickArmed = true;
   device.onDeviceEvent?.((event) => {
+    // Focus-based ownership: only act when the pi host terminal is
+    // frontmost. Otherwise the background daemon owns the keys so the
+    // pad works as a system-wide macropad in other apps.
+    void isHostFrontmost(config.hostBundleId).then((owned) => {
+      if (owned) handleDeviceEvent(event);
+    });
+  });
+  function handleDeviceEvent(event: DeviceEvent): void {
     if (event.type === "key") {
       // Dial click confirms the joystick menu while it is open.
       if (menuOpen && event.key === "ENC_CLK" && event.act === 1) {
@@ -186,7 +195,7 @@ export default function (pi: ExtensionAPI) {
     }
     const input = config.joystick[direction];
     if (input) pi.sendUserMessage(input, { deliverAs: "followUp" });
-  });
+  }
 
   const KEYSEND = `${process.env.HOME}/.pi/agent/keysend`;
   let menuOpen = false;

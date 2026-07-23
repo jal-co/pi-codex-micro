@@ -46,6 +46,22 @@ export interface MicroConfig {
    */
   deviceKeys: Record<string, string>;
   /**
+   * Bundle id of the terminal that hosts pi (Zentty by default). Used
+   * for focus-based ownership: when this app is frontmost the pi
+   * extension owns the keys; when any other app is frontmost the
+   * background daemon owns them. Find yours with `osascript -e 'id of
+   * app "Zentty"'`.
+   */
+  hostBundleId: string;
+  /**
+   * Key bindings used by the daemon when pi is NOT frontmost, so the
+   * pad works as a system-wide macropad. Same grammar as deviceKeys
+   * but only exec:/holdexec: make sense here (no pi to send text to).
+   * Falls back to the exec/holdexec entries in deviceKeys when a key
+   * is absent here.
+   */
+  globalKeys: Record<string, string>;
+  /**
    * Custom pane-focus command as an argv array, overriding terminal
    * auto-detection. Example: ["tmux", "select-pane", "-t", "%3"].
    */
@@ -84,6 +100,8 @@ export const DEFAULT_CONFIG: MicroConfig = {
     ACT07: `exec:${join(homedir(), ".pi", "agent", "keysend")} 36`,
     ACT08: `exec:${join(homedir(), ".pi", "agent", "keysend")} 125 36`,
   },
+  hostBundleId: "be.zenjoy.zentty",
+  globalKeys: {},
 };
 
 export function loadConfig(): MicroConfig {
@@ -96,6 +114,7 @@ export function loadConfig(): MicroConfig {
       joystick: { ...DEFAULT_CONFIG.joystick, ...raw.joystick },
       commandKeys: { ...DEFAULT_CONFIG.commandKeys, ...raw.commandKeys },
       deviceKeys: { ...DEFAULT_CONFIG.deviceKeys, ...raw.deviceKeys },
+      globalKeys: { ...DEFAULT_CONFIG.globalKeys, ...raw.globalKeys },
       joystickMenu: raw.joystickMenu ?? DEFAULT_CONFIG.joystickMenu,
     };
   } catch {

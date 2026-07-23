@@ -1,46 +1,45 @@
 /**
- * Standalone Codex Micro daemon: keeps exec-style key bindings (fn
- * mic, keystroke keys) working when no pi session is running. Skips
- * all events while any live pi session holds an agent slot, so the
- * extension and daemon never double-fire. Run via launchd (see
- * scripts/install-daemon.sh) or `npm run daemon`.
+ * Standalone Codex Micro daemon: turns the pad into a system-wide
+ * macropad. It owns the keys whenever the pi host terminal (Zentty)
+ * is NOT frontmost; when Zentty is frontmost the pi extension owns
+ * them, so the two never double-fire. Bindings come from globalKeys
+ * (falling back to exec/holdexec entries in deviceKeys). Run via
+ * launchd (scripts/install-daemon.sh) or `npm run daemon`.
  */
 
-import { exec } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { exec, execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { HidTransport } from "../src/hid-transport.ts";
 import { loadConfig } from "../src/config.ts";
 
-const SLOT_DIR = join(homedir(), ".pi", "agent", "codex-micro-slots");
+const FRONTAPP = join(homedir(), ".pi", "agent", "frontapp");
 
-function piSessionAlive(): boolean {
-  try {
-    for (const file of readdirSync(SLOT_DIR)) {
-      if (!file.endsWith(".pid")) continue;
-      const pid = Number(readFileSync(join(SLOT_DIR, file), "utf8").trim());
-      if (!Number.isInteger(pid) || pid <= 0) continue;
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EPERM") return true;
-      }
-    }
-  } catch {
-    // no slot dir yet
-  }
-  return false;
+let frontBundle = "";
+function refreshFront(): void {
+  execFile(FRONTAPP, (error, stdout) => {
+    if (!error) frontBundle = stdout.trim();
+  });
 }
+refreshFront();
+setInterval(refreshFront, 300).unref();
 
 const config = loadConfig();
 const transport = new HidTransport(config);
 
+function bindingFor(key: string): string | undefined {
+  const g = config.globalKeys[key];
+  if (g) return g;
+  const d = config.deviceKeys[key];
+  // Only exec/holdexec bindings make sense with no pi to receive text.
+  return d && (d.startsWith("exec:") || d.startsWith("holdexec:")) ? d : undefined;
+}
+
 transport.onDeviceEvent((event) => {
   if (event.type !== "key") return;
-  if (piSessionAlive()) return; // a pi session owns the keys right now
-  const input = config.deviceKeys[event.key];
+  // Zentty frontmost -> the pi extension owns the keys; stay out.
+  if (frontBundle === config.hostBundleId) return;
+  const input = bindingFor(event.key);
   if (!input) return;
   if (input.startsWith("holdexec:")) {
     if (event.act !== 0 && event.act !== 1) return;
@@ -49,7 +48,6 @@ transport.onDeviceEvent((event) => {
   }
   if (event.act !== 1 && event.act !== 2) return;
   if (input.startsWith("exec:")) exec(input.slice(5), () => {});
-  // Plain text bindings need a pi session; nothing to send them to.
 });
 
 async function run(): Promise<void> {
