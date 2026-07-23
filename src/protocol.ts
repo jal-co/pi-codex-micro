@@ -46,13 +46,17 @@ export const FRAME_TYPE = 0x02;
 /** Effect enum values (firmware). */
 export const EFFECT = { off: 0, solid: 1, snake: 2, rainbow: 3, breath: 4, gradient: 5, shallowBreath: 6 } as const;
 
-/** Per-state light config sent via v.oai.thstatus. */
+/**
+ * Per-state light config sent via v.oai.thstatus. Colors, effects, and
+ * brightness match the official Codex Micro palette shipped in ChatGPT
+ * Desktop's @worklouder/wl-device-kit (mined in DevVig/microbridge).
+ */
 export const STATE_LIGHTS: Record<AgentState, { c: number; b: number; e: number }> = {
-  idle: { c: 0x000000, b: 0, e: EFFECT.off },
-  thinking: { c: 0x8b5cf6, b: 1, e: EFFECT.breath },
-  complete: { c: 0x22c55e, b: 1, e: EFFECT.solid },
-  "needs-input": { c: 0xf59e0b, b: 1, e: EFFECT.breath },
-  error: { c: 0xef4444, b: 1, e: EFFECT.solid },
+  idle: { c: 0xe9e9e6, b: 1, e: EFFECT.solid },
+  thinking: { c: 0x3d7eff, b: 0.55, e: EFFECT.shallowBreath },
+  complete: { c: 0x30c463, b: 1, e: EFFECT.solid },
+  "needs-input": { c: 0xffb000, b: 0.55, e: EFFECT.breath },
+  error: { c: 0xff453a, b: 1, e: EFFECT.solid },
 };
 
 let rpcId = 0;
@@ -80,6 +84,16 @@ export function buildAgentStateReports(slot: number, state: AgentState): number[
   return frameMessage({
     method: "v.oai.thstatus",
     params: [{ id: slot, c: light.c, b: light.b, e: light.e, s: 0.5 }],
+    id: rpcId,
+  });
+}
+
+/** Build framed reports that turn a slot's light fully off. */
+export function buildClearReports(slot: number): number[][] {
+  rpcId = (rpcId + 1) % 1000;
+  return frameMessage({
+    method: "v.oai.thstatus",
+    params: [{ id: slot, c: 0, b: 0, e: EFFECT.off, s: 0 }],
     id: rpcId,
   });
 }

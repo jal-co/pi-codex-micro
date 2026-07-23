@@ -51,6 +51,16 @@ export function acquireSlot(preferred: number): number {
   return preferred; // all six taken: share the preferred slot
 }
 
+/** Slots whose lock file points at a dead pid (lights may be stuck). */
+export function staleSlots(): number[] {
+  const stale: number[] = [];
+  for (let slot = 0; slot < SLOT_COUNT; slot += 1) {
+    const owner = ownerOf(slot);
+    if (owner !== null && !isAlive(owner)) stale.push(slot);
+  }
+  return stale;
+}
+
 /** Release this process's slot (session shutdown). */
 export function releaseSlot(slot: number): void {
   if (ownerOf(slot) === process.pid && existsSync(slotPath(slot))) {

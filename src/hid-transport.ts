@@ -8,7 +8,7 @@
 
 import type { AgentState, DeviceEventListener, DeviceTransport } from "./transport.js";
 import type { MicroConfig } from "./config.js";
-import { buildAgentStateReports, REPORT_ID, FRAME_TYPE } from "./protocol.js";
+import { buildAgentStateReports, buildClearReports, REPORT_ID, FRAME_TYPE } from "./protocol.js";
 
 interface HidDeviceLike {
   write(data: number[]): number;
@@ -88,9 +88,17 @@ export class HidTransport implements DeviceTransport {
   }
 
   async setAgentState(slot: number, state: AgentState): Promise<void> {
+    await this.writeReports(buildAgentStateReports(slot, state));
+  }
+
+  async clearSlot(slot: number): Promise<void> {
+    await this.writeReports(buildClearReports(slot));
+  }
+
+  private async writeReports(reports: number[][]): Promise<void> {
     if (!this.device) return;
     try {
-      for (const report of buildAgentStateReports(slot, state)) {
+      for (const report of reports) {
         this.device.write(report);
         await new Promise((r) => setTimeout(r, 4));
       }

@@ -23,6 +23,8 @@ export interface DeviceTransport {
    * `slot` selects which agent key (0-based) for multi-session setups.
    */
   setAgentState(slot: number, state: AgentState): Promise<void>;
+  /** Turn a slot's light fully off (session shutdown / cleanup). */
+  clearSlot?(slot: number): Promise<void>;
   /** Human-readable transport description for /codex-micro status. */
   describe(): string;
   /**

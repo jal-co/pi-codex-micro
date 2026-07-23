@@ -21,7 +21,7 @@ import { SimConnection } from "./sim.js";
 import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
-import { acquireSlot, releaseSlot } from "./slots.js";
+import { acquireSlot, releaseSlot, staleSlots } from "./slots.js";
 import { detectTerminal } from "./terminal.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
@@ -40,6 +40,9 @@ class MultiTransport implements DeviceTransport {
   }
   async setAgentState(slot: number, state: AgentState): Promise<void> {
     await Promise.all(this.targets.map((t) => t.setAgentState(slot, state)));
+  }
+  async clearSlot(slot: number): Promise<void> {
+    await Promise.all(this.targets.map((t) => t.clearSlot?.(slot)));
   }
   describe(): string {
     return this.targets.map((t) => t.describe()).join(" | ");
@@ -247,6 +250,9 @@ export default function (pi: ExtensionAPI) {
       terminal: terminal.name,
     });
     await transport.connect();
+    // Clear lights left on by sessions that died without a clean
+    // shutdown (Ctrl-C, crash) so no key stays lit for a dead session.
+    for (const slot of staleSlots()) await transport.clearSlot?.(slot).catch(() => {});
     await tracker.set("idle");
     // Join the sim mesh automatically: the first interactive session
     // hosts the hub, later ones register as clients on creation.
@@ -267,7 +273,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async (event) => {
     latestCtx = null;
-    await tracker.set("idle").catch(() => {});
+    await transport.clearSlot?.(agentSlot).catch(() => {});
     releaseSlot(agentSlot);
     await device.disconnect().catch(() => {});
     // Only tear the sim down when pi actually exits. /new, /resume,
