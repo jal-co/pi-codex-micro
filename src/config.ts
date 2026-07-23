@@ -64,8 +64,11 @@ export const DEFAULT_CONFIG: MicroConfig = {
     // Big mic key: hold the fn/globe key while pressed (Wispr Flow
     // hold-to-talk). Compile scripts/fnkey.swift to ~/.pi/agent/fnkey.
     ACT10: `holdexec:${join(homedir(), ".pi", "agent", "fnkey")}`,
-    ACT07: "Approve. Go ahead.",
-    ACT08: "Deny. Stop and explain what you were about to do.",
+    // Approve/deny answer pi's select dialogs via keystrokes:
+    // Enter accepts the highlighted YES; Down+Enter selects NO.
+    // Compile scripts/keysend.swift to ~/.pi/agent/keysend.
+    ACT07: `exec:${join(homedir(), ".pi", "agent", "keysend")} 36`,
+    ACT08: `exec:${join(homedir(), ".pi", "agent", "keysend")} 125 36`,
   },
 };
 
