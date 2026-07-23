@@ -102,6 +102,22 @@ export default function (pi: ExtensionAPI) {
   const transport: DeviceTransport = new MultiTransport([device, sim]);
   const agentSlot = acquireSlot(config.agentSlot);
   const tracker = new AgentStateTracker(transport, agentSlot);
+
+  // Recover from unplug/replug or a device that wasn't ready at start:
+  // poll the real transport and re-apply the current light on reconnect.
+  let reconnectTimer: ReturnType<typeof setInterval> | null = null;
+  function startReconnectWatchdog(): void {
+    if (reconnectTimer || config.transport !== "hid") return;
+    reconnectTimer = setInterval(() => {
+      if (device.isConnected()) return;
+      void device.connect().then(async (ok) => {
+        if (!ok) return;
+        for (const slot of staleSlots()) await transport.clearSlot?.(slot).catch(() => {});
+        await device.setAgentState(agentSlot, tracker.state).catch(() => {});
+      });
+    }, 4000);
+    reconnectTimer.unref?.();
+  }
   let lastAssistantText = "";
   let latestCtx: ExtensionContext | null = null;
 
@@ -254,6 +270,7 @@ export default function (pi: ExtensionAPI) {
     // shutdown (Ctrl-C, crash) so no key stays lit for a dead session.
     for (const slot of staleSlots()) await transport.clearSlot?.(slot).catch(() => {});
     await tracker.set("idle");
+    startReconnectWatchdog();
     // Join the sim mesh automatically: the first interactive session
     // hosts the hub, later ones register as clients on creation.
     // Skip print/json modes so scripted pi runs don't bind ports.
@@ -273,6 +290,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async (event) => {
     latestCtx = null;
+    if (reconnectTimer) {
+      clearInterval(reconnectTimer);
+      reconnectTimer = null;
+    }
     await transport.clearSlot?.(agentSlot).catch(() => {});
     releaseSlot(agentSlot);
     await device.disconnect().catch(() => {});
