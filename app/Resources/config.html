@@ -140,10 +140,9 @@
       <div class="cell"><button class="key" data-key="ACT07"><span class="glyph">✓</span><span class="bind"></span></button></div>
       <div class="cell"><button class="key" data-key="ACT08"><span class="glyph">✕</span><span class="bind"></span></button></div>
       <div class="cell"><button class="key" data-key="ACT09"><span class="glyph">⤳</span><span class="bind"></span></button></div>
-      <!-- Row 4 -->
-      <div class="cell"><button class="key locked" data-key="ACT10" title="always-on mic"><span class="glyph">🎙</span><span class="bind">fn hold · always</span></button></div>
+      <!-- Row 4: mic (2u, ACT10+ACT11) + Send (2u, ACT12) -->
+      <div class="cell span2"><button class="key wide locked" data-mic title="mic (2u, always-on)"><span class="glyph">🎙</span><span class="bind">fn hold · always</span></button></div>
       <div class="cell span2"><button class="key wide" data-key="ACT12"><span class="glyph">⏎</span><span class="bind"></span></button></div>
-      <div class="cell"><button class="key" data-key="ACT11"><span class="glyph">✦</span><span class="bind"></span></button></div>
     </div>
   </div>
 
@@ -251,7 +250,9 @@
   const AGENT_SLOT = { AG00: "0", AG01: "1", AG02: "2", AG03: "3", AG04: "4", AG05: "5" };
   window.flashKey = (key) => {
     document.getElementById("pressed").innerHTML = "Pressed: <b>" + key + "</b>";
-    let el = document.querySelector('[data-key="' + key + '"]');
+    let el = null;
+    if (key === "ACT10" || key === "ACT11") el = document.querySelector("[data-mic]");
+    else el = document.querySelector('[data-key="' + key + '"]');
     if (el && el.classList.contains("dial-hit")) el = el.parentElement.querySelector(".dial");
     if (!el && AGENT_SLOT[key] !== undefined) el = document.querySelector('.agent[data-slot="' + AGENT_SLOT[key] + '"]');
     if (!el) return;

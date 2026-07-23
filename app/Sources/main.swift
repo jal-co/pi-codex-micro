@@ -19,7 +19,7 @@ struct Config {
     var hostBundleId = "be.zenjoy.zentty"
     var globalKeys: [String: String] = [:]
     var deviceKeys: [String: String] = [:]
-    var alwaysKeys: [String] = ["ACT10"]
+    var alwaysKeys: [String] = ["ACT10", "ACT11"]
 
     static func load() -> Config {
         var config = Config()
@@ -244,9 +244,10 @@ let actionPresets: [(label: String, value: String)] = [
     ("Custom command…", "__custom__"),
 ]
 
-/// The keys shown in the configurator (command keys + encoder).
+/// The keys shown in the configurator (command keys + encoder). The
+/// mic (ACT10+ACT11) is always-on and not assignable.
 let configurableKeys = [
-    "ACT06", "ACT07", "ACT08", "ACT09", "ACT10", "ACT11", "ACT12",
+    "ACT06", "ACT07", "ACT08", "ACT09", "ACT12",
     "ENC_CW", "ENC_CC", "ENC_CLK",
 ]
 
