@@ -109,7 +109,7 @@ export const DEFAULT_CONFIG: MicroConfig = {
   },
   hostBundleId: "be.zenjoy.zentty",
   globalKeys: {},
-  alwaysKeys: ["ACT10"],
+  alwaysKeys: ["ACT10", "ACT11"],
 };
 
 export function loadConfig(): MicroConfig {
