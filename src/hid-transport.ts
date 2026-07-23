@@ -8,7 +8,7 @@
 
 import type { AgentState, DeviceTransport } from "./transport.js";
 import type { MicroConfig } from "./config.js";
-import { buildAgentStateReport } from "./protocol.js";
+import { buildAgentStateReports } from "./protocol.js";
 
 interface HidDeviceLike {
   write(data: number[]): number;
@@ -24,7 +24,7 @@ interface HidModuleLike {
     path?: string;
     product?: string;
   }>;
-  HID: new (path: string) => HidDeviceLike;
+  HID: new (path: string, options?: { nonExclusive?: boolean }) => HidDeviceLike;
 }
 
 export class HidTransport implements DeviceTransport {
@@ -56,7 +56,7 @@ export class HidTransport implements DeviceTransport {
         this.lastError = "no matching HID device found";
         return false;
       }
-      this.device = new hid.HID(match.path);
+      this.device = new hid.HID(match.path, { nonExclusive: true });
       this.deviceLabel = match.product ?? `${match.vendorId.toString(16)}:${match.productId.toString(16)}`;
       this.lastError = "";
       return true;
@@ -82,7 +82,10 @@ export class HidTransport implements DeviceTransport {
   async setAgentState(slot: number, state: AgentState): Promise<void> {
     if (!this.device) return;
     try {
-      this.device.write(buildAgentStateReport(slot, state));
+      for (const report of buildAgentStateReports(slot, state)) {
+        this.device.write(report);
+        await new Promise((r) => setTimeout(r, 4));
+      }
     } catch (error) {
       this.lastError = `write failed: ${String(error)}`;
       await this.disconnect();
