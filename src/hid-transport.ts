@@ -6,13 +6,15 @@
  * in input-only mode.
  */
 
-import type { AgentState, DeviceTransport } from "./transport.js";
+import type { AgentState, DeviceEventListener, DeviceTransport } from "./transport.js";
 import type { MicroConfig } from "./config.js";
-import { buildAgentStateReports } from "./protocol.js";
+import { buildAgentStateReports, REPORT_ID, FRAME_TYPE } from "./protocol.js";
 
 interface HidDeviceLike {
   write(data: number[]): number;
   close(): void;
+  on(event: "data", cb: (buf: Buffer) => void): void;
+  on(event: "error", cb: (err: unknown) => void): void;
 }
 
 interface HidModuleLike {
@@ -31,6 +33,8 @@ export class HidTransport implements DeviceTransport {
   private device: HidDeviceLike | null = null;
   private deviceLabel = "";
   private lastError = "";
+  private listener: DeviceEventListener | null = null;
+  private rxBuffer = "";
 
   constructor(private readonly config: MicroConfig) {}
 
@@ -59,6 +63,10 @@ export class HidTransport implements DeviceTransport {
       this.device = new hid.HID(match.path, { nonExclusive: true });
       this.deviceLabel = match.product ?? `${match.vendorId.toString(16)}:${match.productId.toString(16)}`;
       this.lastError = "";
+      this.device.on("data", (buf) => this.handleReport(buf));
+      this.device.on("error", () => {
+        void this.disconnect();
+      });
       return true;
     } catch (error) {
       this.lastError = `open failed: ${String(error)}`;
@@ -95,5 +103,39 @@ export class HidTransport implements DeviceTransport {
   describe(): string {
     if (this.device) return `hid connected (${this.deviceLabel})`;
     return this.lastError ? `hid disconnected (${this.lastError})` : "hid disconnected";
+  }
+
+  onDeviceEvent(listener: DeviceEventListener): void {
+    this.listener = listener;
+  }
+
+  /** Reassemble framed JSON lines and emit key/joystick events. */
+  private handleReport(buf: Buffer): void {
+    const off = buf[0] === REPORT_ID ? 1 : 0;
+    if (buf[off] !== FRAME_TYPE) return; // channel 1 is debug logs
+    const len = buf[off + 1];
+    this.rxBuffer += buf.subarray(off + 2, off + 2 + len).toString("utf8");
+    if (this.rxBuffer.length > 8192) this.rxBuffer = "";
+    let newline;
+    while ((newline = this.rxBuffer.indexOf("\n")) >= 0) {
+      const line = this.rxBuffer.slice(0, newline);
+      this.rxBuffer = this.rxBuffer.slice(newline + 1);
+      this.dispatch(line);
+    }
+  }
+
+  private dispatch(line: string): void {
+    if (!this.listener) return;
+    let msg: { m?: string; p?: { k?: string; act?: number; a?: number; d?: number } };
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (msg.m === "v.oai.hid" && msg.p?.k !== undefined) {
+      this.listener({ type: "key", key: msg.p.k, act: msg.p.act ?? 1 });
+    } else if (msg.m === "v.oai.rad" && msg.p) {
+      this.listener({ type: "joystick", angle: msg.p.a ?? 0, distance: msg.p.d ?? 0 });
+    }
   }
 }

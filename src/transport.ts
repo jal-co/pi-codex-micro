@@ -25,4 +25,18 @@ export interface DeviceTransport {
   setAgentState(slot: number, state: AgentState): Promise<void>;
   /** Human-readable transport description for /codex-micro status. */
   describe(): string;
+  /**
+   * Subscribe to device input events (vendor channel), if the transport
+   * supports reading. `key` is the firmware key ID (AG00-AG05,
+   * ACT06-ACT12, ENC_CW/ENC_CC/ENC_CLK) and `act` is 0=release,
+   * 1=press, 2=encoder step. Joystick events arrive as key "RAD" with
+   * angle/distance in the extra payload.
+   */
+  onDeviceEvent?(listener: DeviceEventListener): void;
 }
+
+export type DeviceEvent =
+  | { type: "key"; key: string; act: number }
+  | { type: "joystick"; angle: number; distance: number };
+
+export type DeviceEventListener = (event: DeviceEvent) => void;

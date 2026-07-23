@@ -31,6 +31,13 @@ export interface MicroConfig {
   /** Extra command keys -> pi input to send (keyed by shortcut). */
   commandKeys: Record<string, string>;
   /**
+   * Direct device-key bindings (vendor HID events, no Work Louder
+   * Input needed). Keys: AG00-AG05, ACT06-ACT12, ENC_CW, ENC_CC,
+   * ENC_CLK. Values: pi input to send, or "exec:<shell command>" to
+   * run a command instead (e.g. synthesize a keystroke).
+   */
+  deviceKeys: Record<string, string>;
+  /**
    * Custom pane-focus command as an argv array, overriding terminal
    * auto-detection. Example: ["tmux", "select-pane", "-t", "%3"].
    */
@@ -52,6 +59,12 @@ export const DEFAULT_CONFIG: MicroConfig = {
     right: "Continue where you left off.",
   },
   commandKeys: {},
+  deviceKeys: {
+    // Big mic key: tap the fn/globe key (macOS dictation trigger).
+    ACT10: "exec:osascript -e 'tell application \"System Events\" to key code 63'",
+    ACT07: "Approve. Go ahead.",
+    ACT08: "Deny. Stop and explain what you were about to do.",
+  },
 };
 
 export function loadConfig(): MicroConfig {
@@ -63,6 +76,7 @@ export function loadConfig(): MicroConfig {
       ...raw,
       joystick: { ...DEFAULT_CONFIG.joystick, ...raw.joystick },
       commandKeys: { ...DEFAULT_CONFIG.commandKeys, ...raw.commandKeys },
+      deviceKeys: { ...DEFAULT_CONFIG.deviceKeys, ...raw.deviceKeys },
     };
   } catch {
     return DEFAULT_CONFIG;

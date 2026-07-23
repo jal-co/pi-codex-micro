@@ -15,6 +15,7 @@ import { CONFIG_PATH, loadConfig } from "./config.js";
 import { HidTransport } from "./hid-transport.js";
 import { MockTransport } from "./mock-transport.js";
 import { basename } from "node:path";
+import { exec } from "node:child_process";
 import { SimConnection } from "./sim.js";
 import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
@@ -97,6 +98,36 @@ export default function (pi: ExtensionAPI) {
   const tracker = new AgentStateTracker(transport, config.agentSlot);
   let lastAssistantText = "";
   let latestCtx: ExtensionContext | null = null;
+
+  // Direct device-key bindings over the vendor HID channel.
+  let joystickArmed = true;
+  device.onDeviceEvent?.((event) => {
+    if (event.type === "key") {
+      if (event.act !== 1 && event.act !== 2) return; // ignore releases
+      const input = config.deviceKeys[event.key];
+      if (!input) return;
+      if (input.startsWith("exec:")) {
+        exec(input.slice(5), (error) => {
+          if (error && latestCtx?.hasUI) latestCtx.ui.notify(`deviceKeys[${event.key}] exec failed: ${String(error)}`, "error");
+        });
+      } else {
+        pi.sendUserMessage(input, { deliverAs: "followUp" });
+      }
+      return;
+    }
+    // Joystick: fire once per deflection, rearm near center.
+    if (event.distance < 0.3) {
+      joystickArmed = true;
+      return;
+    }
+    if (!joystickArmed || event.distance < 0.9) return;
+    joystickArmed = false;
+    const a = event.angle;
+    const direction: keyof typeof config.joystick =
+      a >= 0.875 || a < 0.125 ? "right" : a < 0.375 ? "down" : a < 0.625 ? "left" : "up";
+    const input = config.joystick[direction];
+    if (input) pi.sendUserMessage(input, { deliverAs: "followUp" });
+  });
 
   async function handleSimAction(action: SimAction): Promise<void> {
     switch (action.kind) {
