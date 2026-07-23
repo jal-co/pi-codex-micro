@@ -22,7 +22,9 @@
     "README.md"
   ],
   "scripts": {
-    "tegami": "node scripts/tegami.mts"
+    "tegami": "node scripts/tegami.mts",
+    "daemon": "tsx scripts/microd.mts",
+    "install-daemon": "bash scripts/install-daemon.sh"
   },
   "pi": {
     "extensions": [
