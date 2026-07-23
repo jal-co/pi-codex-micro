@@ -38,8 +38,12 @@ function bindingFor(key: string): string | undefined {
 transport.onDeviceEvent((event) => {
   if (event.type !== "key") return;
   // Zentty frontmost -> the pi extension owns the keys; stay out.
-  if (frontBundle === config.hostBundleId) return;
+  if (frontBundle === config.hostBundleId) {
+    if (event.act === 1) console.log(new Date().toISOString(), `skip ${event.key} (Zentty frontmost)`);
+    return;
+  }
   const input = bindingFor(event.key);
+  if (event.act === 1) console.log(new Date().toISOString(), `key ${event.key} front=${frontBundle} -> ${input ?? "(no global binding)"}`);
   if (!input) return;
   if (input.startsWith("holdexec:")) {
     if (event.act !== 0 && event.act !== 1) return;

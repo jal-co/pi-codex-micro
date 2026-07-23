@@ -18,6 +18,7 @@ struct Config {
     var hostBundleId = "be.zenjoy.zentty"
     var globalKeys: [String: String] = [:]
     var deviceKeys: [String: String] = [:]
+    var alwaysKeys: [String] = ["ACT10"]
 
     static func load() -> Config {
         var config = Config()
@@ -29,6 +30,7 @@ struct Config {
         if let host = json["hostBundleId"] as? String { config.hostBundleId = host }
         if let g = json["globalKeys"] as? [String: String] { config.globalKeys = g }
         if let d = json["deviceKeys"] as? [String: String] { config.deviceKeys = d }
+        if let a = json["alwaysKeys"] as? [String] { config.alwaysKeys = a }
         return config
     }
 
@@ -401,9 +403,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hid = MicroHID { [weak self] key, act in
             guard let self else { return }
-            // Focus gate: stay out while the pi host terminal is frontmost.
+            // Always-keys (mic) fire regardless of focus so push-to-talk
+            // works in every app, including pi. Other keys only fire
+            // when pi is not frontmost (the extension owns them there).
+            let always = self.config.alwaysKeys.contains(key)
             let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-            let owned = front != self.config.hostBundleId
+            let owned = always || front != self.config.hostBundleId
             if act == 1 { self.showKey(key, owned: owned) }
             if !owned { return }
             guard let binding = self.config.binding(for: key) else { return }
