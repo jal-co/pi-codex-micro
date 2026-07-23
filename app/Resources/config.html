@@ -60,9 +60,20 @@
     background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(235,236,241,.65));
     box-shadow: inset 0 0 0 1px rgba(120,124,140,.3), 0 2px 5px rgba(30,32,40,.12);
   }
-  .agent .cap { position: absolute; inset: 13%; border-radius: 22%; background: rgba(255,255,255,.55); }
+  .agent .cap { position: absolute; inset: 13%; border-radius: 22%; background: var(--idle);
+    box-shadow: inset 0 0 0 1px rgba(120,124,140,.22); transition: background .25s ease, box-shadow .25s ease; }
   .agent .who { position: absolute; left: 6%; right: 6%; bottom: 6%; text-align: center;
     font-size: 1.9cqi; letter-spacing: .05em; color: var(--muted); }
+  .agent[data-state="idle"] .cap { background: var(--idle); }
+  .agent[data-state="thinking"] .cap { background: radial-gradient(circle, var(--thinking), color-mix(in srgb, var(--thinking) 25%, white));
+    box-shadow: 0 0 3.5cqi .5cqi color-mix(in srgb, var(--thinking) 60%, transparent); animation: pulse 1.1s ease-in-out infinite; }
+  .agent[data-state="complete"] .cap { background: radial-gradient(circle, var(--complete), color-mix(in srgb, var(--complete) 25%, white));
+    box-shadow: 0 0 3.5cqi .5cqi color-mix(in srgb, var(--complete) 60%, transparent); }
+  .agent[data-state="needs-input"] .cap { background: radial-gradient(circle, var(--needs-input), color-mix(in srgb, var(--needs-input) 25%, white));
+    box-shadow: 0 0 3.5cqi .5cqi color-mix(in srgb, var(--needs-input) 60%, transparent); animation: pulse 1.8s ease-in-out infinite; }
+  .agent[data-state="error"] .cap { background: radial-gradient(circle, var(--error), color-mix(in srgb, var(--error) 25%, white));
+    box-shadow: 0 0 3.5cqi .5cqi color-mix(in srgb, var(--error) 60%, transparent); }
+  @keyframes pulse { 50% { filter: brightness(1.25); } }
 
   .key {
     position: absolute; inset: 0; border: 0; border-radius: 16%; cursor: pointer;
@@ -110,14 +121,14 @@
       <div class="cell"><div class="dial"></div>
         <button class="dial-hit ccw" data-key="ENC_CC" title="dial left"></button>
         <button class="dial-hit cw" data-key="ENC_CW" title="dial right"></button></div>
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 1</span></div></div>
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 2</span></div></div>
+      <div class="cell"><div class="agent" data-slot="0" data-state="idle"><span class="cap"></span><span class="who">AGENT 1</span></div></div>
+      <div class="cell"><div class="agent" data-slot="1" data-state="idle"><span class="cap"></span><span class="who">AGENT 2</span></div></div>
       <div class="cell"><div class="joy"><div class="puck"></div></div></div>
       <!-- Row 2 -->
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 3</span></div></div>
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 4</span></div></div>
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 5</span></div></div>
-      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 6</span></div></div>
+      <div class="cell"><div class="agent" data-slot="2" data-state="idle"><span class="cap"></span><span class="who">AGENT 3</span></div></div>
+      <div class="cell"><div class="agent" data-slot="3" data-state="idle"><span class="cap"></span><span class="who">AGENT 4</span></div></div>
+      <div class="cell"><div class="agent" data-slot="4" data-state="idle"><span class="cap"></span><span class="who">AGENT 5</span></div></div>
+      <div class="cell"><div class="agent" data-slot="5" data-state="idle"><span class="cap"></span><span class="who">AGENT 6</span></div></div>
       <!-- Row 3 -->
       <div class="cell"><button class="key" data-key="ACT06"><span class="glyph">⚡</span><span class="bind"></span></button></div>
       <div class="cell"><button class="key" data-key="ACT07"><span class="glyph">✓</span><span class="bind"></span></button></div>
@@ -221,6 +232,12 @@
 
   // Swift injects current bindings by calling window.setBindings(json).
   window.setBindings = (obj) => { bindings = obj || {}; render(); };
+  // Swift injects live agent states: { "0": "thinking", "2": "complete", ... }
+  window.setStates = (obj) => {
+    document.querySelectorAll(".agent[data-slot]").forEach((el) => {
+      el.dataset.state = (obj && obj[el.dataset.slot]) || "idle";
+    });
+  };
   render();
   send({ ready: true });
 </script>

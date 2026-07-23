@@ -46,12 +46,15 @@ struct Config {
 // MARK: - Keystroke posting (in-process, uses this app's Accessibility grant)
 
 enum Keystroke {
-    /// Tap virtual keycodes in sequence (e.g. 36 = Return).
+    /// Tap virtual keycodes in sequence (e.g. 36 = Return). Flags are
+    /// explicitly cleared so a lingering modifier (e.g. fn left over
+    /// from dictation) can't turn Return into fn+Return.
     static func tap(_ codes: [CGKeyCode]) {
         for code in codes {
             for down in [true, false] {
-                CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)?
-                    .post(tap: .cghidEventTap)
+                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { continue }
+                event.flags = []
+                event.post(tap: .cghidEventTap)
                 usleep(15_000)
             }
         }
@@ -264,9 +267,10 @@ func normalizeToPreset(_ binding: String?) -> String {
     return binding
 }
 
-final class ConfigWindowController: NSObject, WKScriptMessageHandler {
+final class ConfigWindowController: NSObject, WKScriptMessageHandler, NSWindowDelegate {
     private var window: NSWindow?
     private var webView: WKWebView?
+    private var stateTimer: Timer?
     private let onSaved: () -> Void
 
     init(onSaved: @escaping () -> Void) { self.onSaved = onSaved }
@@ -274,6 +278,8 @@ final class ConfigWindowController: NSObject, WKScriptMessageHandler {
     func show() {
         if let window {
             injectBindings()
+            injectStates()
+            startStatePolling()
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -294,9 +300,11 @@ final class ConfigWindowController: NSObject, WKScriptMessageHandler {
         win.contentView = web
         win.center()
         win.isReleasedWhenClosed = false
+        win.delegate = self
         window = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        startStatePolling()
     }
 
     /// Push the current effective bindings into the page as preset values.
@@ -309,10 +317,38 @@ final class ConfigWindowController: NSObject, WKScriptMessageHandler {
         webView?.evaluateJavaScript("window.setBindings(\(json))")
     }
 
+    /// Read per-slot agent states written by the pi extension and mirror
+    /// them onto the pictured indicator keys.
+    private func injectStates() {
+        let dir = ("~/.pi/agent/codex-micro-slots" as NSString).expandingTildeInPath
+        var states: [String: String] = [:]
+        for slot in 0..<6 {
+            let path = "\(dir)/\(slot).state"
+            if let s = try? String(contentsOfFile: path, encoding: .utf8) {
+                states[String(slot)] = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: states),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.setStates(\(json))")
+    }
+
+    private func startStatePolling() {
+        stateTimer?.invalidate()
+        stateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.injectStates()
+        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stateTimer?.invalidate()
+        stateTimer = nil
+    }
+
     // JS -> Swift messages: { ready: true } or { key, value }.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
-        if body["ready"] as? Bool == true { injectBindings(); return }
+        if body["ready"] as? Bool == true { injectBindings(); injectStates(); return }
         guard let key = body["key"] as? String, let value = body["value"] as? String else { return }
         writeBinding(key: key, value: value)
     }
@@ -343,6 +379,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastKeyItem: NSMenuItem!
     private var clearTitleWork: DispatchWorkItem?
     private lazy var configWindow = ConfigWindowController { [weak self] in self?.reload() }
+    // Where focus was when dictation (mic) started, so a following
+    // keystroke (e.g. Enter to send) can be routed back there after
+    // Wispr Flow steals focus and doesn't return it.
+    private var dictationTarget: NSRunningApplication?
+    private var dictationAt = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -368,11 +409,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // works in every app, including pi. Other keys only fire
             // when pi is not frontmost (the extension owns them there).
             let always = self.config.alwaysKeys.contains(key)
-            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-            let owned = always || front != self.config.hostBundleId
+            let front = NSWorkspace.shared.frontmostApplication
+            let owned = always || front?.bundleIdentifier != self.config.hostBundleId
             if act == 1 { self.showKey(key, owned: owned) }
             if !owned { return }
             guard let binding = self.config.binding(for: key) else { return }
+
+            // Mic press: remember the field being dictated into.
+            if act == 1 && (binding == "holdfn" || binding.contains("fnkey")) {
+                self.dictationTarget = front
+                self.dictationAt = Date()
+            }
+
+            // A keystroke soon after dictation: restore the pre-dictation
+            // app first, since Wispr may hold focus, then post the keys.
+            let isKeystroke = normalizeToPreset(binding).hasPrefix("key:")
+            if isKeystroke, act == 1, let target = self.dictationTarget,
+               Date().timeIntervalSince(self.dictationAt) < 60,
+               front?.processIdentifier != target.processIdentifier {
+                target.activate(options: [])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    execute(binding: binding, act: act)
+                }
+                return
+            }
             execute(binding: binding, act: act)
         }
         hid.start()
