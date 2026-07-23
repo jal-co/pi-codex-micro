@@ -1,9 +1,6 @@
----
-packages:
-  "pi-codex-micro": minor
----
+## pi-codex-micro@0.2.0
 
-## Initial release
+### Initial release
 
 Pi extension for the Work Louder Codex Micro macropad: command keys,
 dial, and joystick input mapped to pi actions, two-way agent-state LED

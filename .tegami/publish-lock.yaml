@@ -1,0 +1,11 @@
+core:changelogs:
+  - content: "---\npackages:\n  pi-codex-micro:\n    type: minor\n---\n\n## Initial release\n\nPi extension for the Work Louder Codex Micro macropad: command keys,\ndial, and joystick input mapped to pi actions, two-way agent-state LED\nfeedback over HID, and a browser simulator that renders the device in\nCSS with six agent indicator keys and a state-colored exterior glow.\n"
+    filename: 2026-07-19-initial-release.md
+    v: 0.0.0
+core:packages:
+  - changelogIds:
+      - 2026-07-19-initial-release.md
+    id: npm:pi-codex-micro
+    updated: true
+npm:packages:
+  - id: npm:pi-codex-micro

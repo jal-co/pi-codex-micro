@@ -1,6 +1,6 @@
 {
   "name": "pi-codex-micro",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi extension for the Work Louder Codex Micro: command keys, dial, joystick input, and two-way agent-state LED feedback.",
   "type": "module",
   "license": "MIT",
