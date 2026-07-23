@@ -20,6 +20,7 @@ import { SimConnection } from "./sim.js";
 import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
+import { acquireSlot, releaseSlot } from "./slots.js";
 import { detectTerminal } from "./terminal.js";
 import type { AgentState, DeviceTransport } from "./transport.js";
 
@@ -95,7 +96,8 @@ export default function (pi: ExtensionAPI) {
   const device: DeviceTransport =
     config.transport === "hid" ? new HidTransport(config) : new MockTransport();
   const transport: DeviceTransport = new MultiTransport([device, sim]);
-  const tracker = new AgentStateTracker(transport, config.agentSlot);
+  const agentSlot = acquireSlot(config.agentSlot);
+  const tracker = new AgentStateTracker(transport, agentSlot);
   let lastAssistantText = "";
   let latestCtx: ExtensionContext | null = null;
 
@@ -117,7 +119,7 @@ export default function (pi: ExtensionAPI) {
       // Agent keys focus the session that owns the slot, unless the
       // user bound them to something else in deviceKeys.
       if (!input && /^AG0[0-5]$/.test(event.key)) {
-        if (event.act === 1 && Number(event.key.slice(2)) === config.agentSlot) void terminal.focus();
+        if (event.act === 1 && Number(event.key.slice(2)) === agentSlot) void terminal.focus();
         return;
       }
       if (!input) return;
@@ -265,6 +267,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async (event) => {
     latestCtx = null;
     await tracker.set("idle").catch(() => {});
+    releaseSlot(agentSlot);
     await device.disconnect().catch(() => {});
     // Only tear the sim down when pi actually exits. /new, /resume,
     // /fork, and /reload replace the extension instance in the same
@@ -392,7 +395,7 @@ export default function (pi: ExtensionAPI) {
       switch (sub) {
         case "sim": {
           const mode = await sim.ensure();
-          await sim.setAgentState(config.agentSlot, tracker.state);
+          await sim.setAgentState(agentSlot, tracker.state);
           sim.setThinkingLevel(pi.getThinkingLevel());
           if (mode === "hub") {
             await pi.exec("open", [sim.url()]).catch(() => {});
@@ -432,7 +435,7 @@ export default function (pi: ExtensionAPI) {
           const lines = [
             `transport: ${transport.describe()}`,
             `state: ${tracker.state}`,
-            `agent slot: ${config.agentSlot}`,
+            `agent slot: ${agentSlot}`,
             `config: ${CONFIG_PATH} (${config.transport})`,
           ];
           ctx.ui.notify(lines.join("\n"), "info");
