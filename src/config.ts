@@ -62,6 +62,13 @@ export interface MicroConfig {
    */
   globalKeys: Record<string, string>;
   /**
+   * Keys that always fire through the background app regardless of
+   * focus (e.g. the mic push-to-talk, which should work in pi AND in
+   * every other app). The pi extension ignores these so the app is
+   * their sole owner and there is no double-fire.
+   */
+  alwaysKeys: string[];
+  /**
    * Custom pane-focus command as an argv array, overriding terminal
    * auto-detection. Example: ["tmux", "select-pane", "-t", "%3"].
    */
@@ -102,6 +109,7 @@ export const DEFAULT_CONFIG: MicroConfig = {
   },
   hostBundleId: "be.zenjoy.zentty",
   globalKeys: {},
+  alwaysKeys: ["ACT10"],
 };
 
 export function loadConfig(): MicroConfig {
@@ -115,6 +123,7 @@ export function loadConfig(): MicroConfig {
       commandKeys: { ...DEFAULT_CONFIG.commandKeys, ...raw.commandKeys },
       deviceKeys: { ...DEFAULT_CONFIG.deviceKeys, ...raw.deviceKeys },
       globalKeys: { ...DEFAULT_CONFIG.globalKeys, ...raw.globalKeys },
+      alwaysKeys: raw.alwaysKeys ?? DEFAULT_CONFIG.alwaysKeys,
       joystickMenu: raw.joystickMenu ?? DEFAULT_CONFIG.joystickMenu,
     };
   } catch {

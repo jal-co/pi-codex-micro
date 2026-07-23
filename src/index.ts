@@ -134,6 +134,9 @@ export default function (pi: ExtensionAPI) {
   });
   function handleDeviceEvent(event: DeviceEvent): void {
     if (event.type === "key") {
+      // Always-keys (mic) are owned by the background app in every app,
+      // including pi, so it never double-fires with the extension.
+      if (config.alwaysKeys.includes(event.key)) return;
       // Dial click confirms the joystick menu while it is open.
       if (menuOpen && event.key === "ENC_CLK" && event.act === 1) {
         exec(`${KEYSEND} 36`, () => {});
