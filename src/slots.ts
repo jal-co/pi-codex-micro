@@ -16,6 +16,30 @@ function slotPath(slot: number): string {
   return join(SLOT_DIR, `${slot}.pid`);
 }
 
+function statePath(slot: number): string {
+  return join(SLOT_DIR, `${slot}.state`);
+}
+
+/** Publish a slot's agent state so the macropad app can mirror its
+ * indicator color. Best effort; never throws into the caller. */
+export function writeSlotState(slot: number, state: string): void {
+  try {
+    mkdirSync(SLOT_DIR, { recursive: true });
+    writeFileSync(statePath(slot), state, "utf8");
+  } catch {
+    // best effort
+  }
+}
+
+/** Remove a slot's published state (session end / light cleared). */
+export function clearSlotState(slot: number): void {
+  try {
+    if (existsSync(statePath(slot))) rmSync(statePath(slot));
+  } catch {
+    // best effort
+  }
+}
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);

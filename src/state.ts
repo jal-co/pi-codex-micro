@@ -3,6 +3,7 @@
  */
 
 import type { AgentState, DeviceTransport } from "./transport.js";
+import { writeSlotState } from "./slots.js";
 
 export class AgentStateTracker {
   private current: AgentState = "idle";
@@ -20,6 +21,7 @@ export class AgentStateTracker {
   async set(state: AgentState): Promise<void> {
     if (state === this.current) return;
     this.current = state;
+    writeSlotState(this.slot, state);
     await this.transport.setAgentState(this.slot, state);
   }
 

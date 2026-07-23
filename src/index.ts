@@ -21,7 +21,7 @@ import { SimConnection } from "./sim.js";
 import { SIM_PAGE } from "./sim-page.js";
 import type { SimAction } from "./sim-shared.js";
 import { AgentStateTracker } from "./state.js";
-import { acquireSlot, releaseSlot, staleSlots } from "./slots.js";
+import { acquireSlot, releaseSlot, staleSlots, clearSlotState } from "./slots.js";
 import { isHostFrontmost } from "./focus.js";
 import { detectTerminal } from "./terminal.js";
 import type { AgentState, DeviceEvent, DeviceTransport } from "./transport.js";
@@ -307,6 +307,7 @@ export default function (pi: ExtensionAPI) {
       reconnectTimer = null;
     }
     await transport.clearSlot?.(agentSlot).catch(() => {});
+    clearSlotState(agentSlot);
     releaseSlot(agentSlot);
     await device.disconnect().catch(() => {});
     // Only tear the sim down when pi actually exits. /new, /resume,
