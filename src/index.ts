@@ -12,6 +12,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CONFIG_PATH, loadConfig } from "./config.js";
+import { runConfigTui } from "./config-tui.js";
 import { HidTransport } from "./hid-transport.js";
 import { MockTransport } from "./mock-transport.js";
 import { basename } from "node:path";
@@ -388,7 +389,7 @@ export default function (pi: ExtensionAPI) {
   // ── /codex-micro command ───────────────────────────────────────────
 
   pi.registerCommand("codex-micro", {
-    description: "Codex Micro: status | sim | sim stop | connect | disconnect | test",
+    description: "Codex Micro: status | config | sim | sim stop | connect | disconnect | test",
     handler: async (args, ctx) => {
       latestCtx = ctx;
       const sub = (args ?? "").trim() || "status";
@@ -429,6 +430,11 @@ export default function (pi: ExtensionAPI) {
             joined === "off" ? "error" : "info",
           );
           showStatus(ctx);
+          break;
+        }
+        case "config": {
+          const saved = await runConfigTui(ctx);
+          if (saved) ctx.ui.notify("Saved. Run /reload to apply.", "info");
           break;
         }
         case "status": {
