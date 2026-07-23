@@ -49,12 +49,15 @@ enum Keystroke {
     /// Tap virtual keycodes in sequence (e.g. 36 = Return). Flags are
     /// explicitly cleared so a lingering modifier (e.g. fn left over
     /// from dictation) can't turn Return into fn+Return.
-    static func tap(_ codes: [CGKeyCode]) {
+    static func tap(_ codes: [CGKeyCode], toPid pid: pid_t? = nil) {
         for code in codes {
             for down in [true, false] {
                 guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { continue }
                 event.flags = []
-                event.post(tap: .cghidEventTap)
+                // Post straight to a specific app when given (e.g. the
+                // field dictated into), so Wispr holding focus can't
+                // swallow the keystroke; otherwise post globally.
+                if let pid { event.postToPid(pid) } else { event.post(tap: .cghidEventTap) }
                 usleep(15_000)
             }
         }
@@ -114,12 +117,12 @@ func runShell(_ command: String) {
 
 // MARK: - Binding execution
 
-func execute(binding: String, act: Int) {
+func execute(binding: String, act: Int, targetPid: pid_t? = nil) {
     // Native verbs (preferred): key:36 / key:125,36 / holdfn / run:<cmd>
     if binding.hasPrefix("key:") {
         if act != 1 && act != 2 { return }
         let codes = binding.dropFirst(4).split(separator: ",").compactMap { UInt16($0) }.map { CGKeyCode($0) }
-        Keystroke.tap(codes)
+        Keystroke.tap(codes, toPid: targetPid)
         return
     }
     if binding == "holdfn" {
@@ -141,7 +144,7 @@ func execute(binding: String, act: Int) {
         if act != 1 && act != 2 { return }
         let cmd = String(binding.dropFirst(5))
         if let codes = keycodesFromKeysend(cmd) {
-            Keystroke.tap(codes)
+            Keystroke.tap(codes, toPid: targetPid)
         } else {
             runShell(cmd)
         }
@@ -428,19 +431,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.dictationAt = Date()
             }
 
-            // A keystroke soon after dictation: restore the pre-dictation
-            // app first, since Wispr may hold focus, then post the keys.
+            // A keystroke soon after dictation: post it straight to the
+            // app that had focus when the mic was pressed, so Wispr
+            // holding keyboard focus can't swallow it (no reclick).
             let isKeystroke = normalizeToPreset(binding).hasPrefix("key:")
+            var targetPid: pid_t?
             if isKeystroke, act == 1, let target = self.dictationTarget,
-               Date().timeIntervalSince(self.dictationAt) < 60,
-               front?.processIdentifier != target.processIdentifier {
+               Date().timeIntervalSince(self.dictationAt) < 60 {
                 target.activate(options: [])
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    execute(binding: binding, act: act)
-                }
-                return
+                targetPid = target.processIdentifier
             }
-            execute(binding: binding, act: act)
+            execute(binding: binding, act: act, targetPid: targetPid)
         }
         hid.start()
     }
