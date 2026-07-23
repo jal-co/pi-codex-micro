@@ -103,9 +103,24 @@ export default function (pi: ExtensionAPI) {
   let joystickArmed = true;
   device.onDeviceEvent?.((event) => {
     if (event.type === "key") {
-      if (event.act !== 1 && event.act !== 2) return; // ignore releases
       const input = config.deviceKeys[event.key];
+      // Agent keys focus the session that owns the slot, unless the
+      // user bound them to something else in deviceKeys.
+      if (!input && /^AG0[0-5]$/.test(event.key)) {
+        if (event.act === 1 && Number(event.key.slice(2)) === config.agentSlot) void terminal.focus();
+        return;
+      }
       if (!input) return;
+      // holdexec: run "<cmd> down" on press and "<cmd> up" on release
+      // (hold-to-talk style bindings, e.g. dictation hotkeys).
+      if (input.startsWith("holdexec:")) {
+        if (event.act !== 0 && event.act !== 1) return;
+        exec(`${input.slice(9)} ${event.act === 1 ? "down" : "up"}`, (error) => {
+          if (error && latestCtx?.hasUI) latestCtx.ui.notify(`deviceKeys[${event.key}] exec failed: ${String(error)}`, "error");
+        });
+        return;
+      }
+      if (event.act !== 1 && event.act !== 2) return; // ignore releases
       if (input.startsWith("exec:")) {
         exec(input.slice(5), (error) => {
           if (error && latestCtx?.hasUI) latestCtx.ui.notify(`deviceKeys[${event.key}] exec failed: ${String(error)}`, "error");

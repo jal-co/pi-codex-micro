@@ -33,8 +33,9 @@ export interface MicroConfig {
   /**
    * Direct device-key bindings (vendor HID events, no Work Louder
    * Input needed). Keys: AG00-AG05, ACT06-ACT12, ENC_CW, ENC_CC,
-   * ENC_CLK. Values: pi input to send, or "exec:<shell command>" to
-   * run a command instead (e.g. synthesize a keystroke).
+   * ENC_CLK. Values: pi input to send, "exec:<shell command>" to run
+   * a command on press, or "holdexec:<cmd>" to run "<cmd> down" on
+   * press and "<cmd> up" on release (hold-to-talk bindings).
    */
   deviceKeys: Record<string, string>;
   /**
@@ -60,8 +61,9 @@ export const DEFAULT_CONFIG: MicroConfig = {
   },
   commandKeys: {},
   deviceKeys: {
-    // Big mic key: tap the fn/globe key (macOS dictation trigger).
-    ACT10: "exec:osascript -e 'tell application \"System Events\" to key code 63'",
+    // Big mic key: hold the fn/globe key while pressed (Wispr Flow
+    // hold-to-talk). Compile scripts/fnkey.swift to ~/.pi/agent/fnkey.
+    ACT10: `holdexec:${join(homedir(), ".pi", "agent", "fnkey")}`,
     ACT07: "Approve. Go ahead.",
     ACT08: "Deny. Stop and explain what you were about to do.",
   },
