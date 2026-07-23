@@ -88,6 +88,10 @@
   .key.locked { cursor: default; opacity: .9; }
   .key:not(.locked):hover { transform: translateY(-1px); box-shadow: inset 0 0 0 2px var(--accent), 0 4px 10px rgba(30,32,40,.18); }
   .key.wide { border-radius: 10%; }
+  .miccluster { position: absolute; inset: 12%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12%; }
+  .miccluster .leds { display: flex; gap: 16%; }
+  .miccluster .leds i { width: 1.6cqi; height: 1.6cqi; border-radius: 50%; background: #6ee7a8; box-shadow: 0 0 1.2cqi #6ee7a8; }
+  .miccluster .micdot { width: 4cqi; height: 4cqi; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #3a3b40, #151619 65%); box-shadow: inset 0 1px 2px rgba(255,255,255,.12); }
 
   .pressed { margin-top: 12px; font-size: 13px; color: var(--muted); font-variant: tabular-nums; }
   .pressed b { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -140,9 +144,10 @@
       <div class="cell"><button class="key" data-key="ACT07"><span class="glyph">✓</span><span class="bind"></span></button></div>
       <div class="cell"><button class="key" data-key="ACT08"><span class="glyph">✕</span><span class="bind"></span></button></div>
       <div class="cell"><button class="key" data-key="ACT09"><span class="glyph">⤳</span><span class="bind"></span></button></div>
-      <!-- Row 4: mic (2u, ACT10+ACT11) + Send (2u, ACT12) -->
+      <!-- Row 4: mic cluster · wide mic (2u, ACT10+ACT11) · ACT12 -->
+      <div class="cell"><div class="miccluster"><span class="leds"><i></i><i></i><i></i></span><span class="micdot"></span></div></div>
       <div class="cell span2"><button class="key wide locked" data-mic title="mic (2u, always-on)"><span class="glyph">🎙</span><span class="bind">fn hold · always</span></button></div>
-      <div class="cell span2"><button class="key wide" data-key="ACT12"><span class="glyph">⏎</span><span class="bind"></span></button></div>
+      <div class="cell"><button class="key" data-key="ACT12"><span class="glyph">⚙</span><span class="bind"></span></button></div>
     </div>
   </div>
 
