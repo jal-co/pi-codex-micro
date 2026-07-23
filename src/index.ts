@@ -103,6 +103,11 @@ export default function (pi: ExtensionAPI) {
   let joystickArmed = true;
   device.onDeviceEvent?.((event) => {
     if (event.type === "key") {
+      // Dial click confirms the joystick menu while it is open.
+      if (menuOpen && event.key === "ENC_CLK" && event.act === 1) {
+        exec(`${KEYSEND} 36`, () => {});
+        return;
+      }
       const input = config.deviceKeys[event.key];
       // Agent keys focus the session that owns the slot, unless the
       // user bound them to something else in deviceKeys.
@@ -140,9 +145,37 @@ export default function (pi: ExtensionAPI) {
     const a = event.angle;
     const direction: keyof typeof config.joystick =
       a >= 0.875 || a < 0.125 ? "right" : a < 0.375 ? "down" : a < 0.625 ? "left" : "up";
+    if (config.joystickMenu.length > 0) {
+      // Menu mode: any deflection opens the action menu; while it is
+      // open, up/down deflections and the dial click are translated to
+      // arrow/enter keystrokes so the stick navigates its own menu.
+      if (menuOpen) {
+        if (direction === "up" || direction === "down")
+          exec(`${KEYSEND} ${direction === "up" ? 126 : 125}`, () => {});
+        return;
+      }
+      void openJoystickMenu();
+      return;
+    }
     const input = config.joystick[direction];
     if (input) pi.sendUserMessage(input, { deliverAs: "followUp" });
   });
+
+  const KEYSEND = `${process.env.HOME}/.pi/agent/keysend`;
+  let menuOpen = false;
+  async function openJoystickMenu(): Promise<void> {
+    const ctx = latestCtx;
+    if (!ctx?.hasUI || menuOpen) return;
+    menuOpen = true;
+    try {
+      const labels = config.joystickMenu.map((item) => item.label);
+      const choice = await ctx.ui.select("Codex Micro actions", labels);
+      const picked = config.joystickMenu.find((item) => item.label === choice);
+      if (picked) pi.sendUserMessage(picked.input, { deliverAs: "followUp" });
+    } finally {
+      menuOpen = false;
+    }
+  }
 
   async function handleSimAction(action: SimAction): Promise<void> {
     switch (action.kind) {

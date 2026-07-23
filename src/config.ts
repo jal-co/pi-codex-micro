@@ -28,6 +28,13 @@ export interface MicroConfig {
    * messages, so slash commands, /skill:name, and plain prompts all work.
    */
   joystick: { up: string; down: string; left: string; right: string };
+  /**
+   * Joystick action menu. When non-empty, deflecting the joystick opens
+   * a select menu of these actions instead of firing the directional
+   * bindings; navigate with the joystick, confirm with the dial click.
+   * Set to [] to restore direct directional bindings.
+   */
+  joystickMenu: Array<{ label: string; input: string }>;
   /** Extra command keys -> pi input to send (keyed by shortcut). */
   commandKeys: Record<string, string>;
   /**
@@ -60,6 +67,13 @@ export const DEFAULT_CONFIG: MicroConfig = {
     right: "Continue where you left off.",
   },
   commandKeys: {},
+  joystickMenu: [
+    { label: "Continue where you left off", input: "Continue where you left off." },
+    { label: "Review latest changes", input: "Review my latest changes and point out problems." },
+    { label: "Commit the work", input: "/skill:git commit the current work" },
+    { label: "Explain what you're doing", input: "Explain what you're currently doing and what's left." },
+    { label: "New session", input: "/new" },
+  ],
   deviceKeys: {
     // Big mic key: hold the fn/globe key while pressed (Wispr Flow
     // hold-to-talk). Compile scripts/fnkey.swift to ~/.pi/agent/fnkey.
@@ -82,6 +96,7 @@ export function loadConfig(): MicroConfig {
       joystick: { ...DEFAULT_CONFIG.joystick, ...raw.joystick },
       commandKeys: { ...DEFAULT_CONFIG.commandKeys, ...raw.commandKeys },
       deviceKeys: { ...DEFAULT_CONFIG.deviceKeys, ...raw.deviceKeys },
+      joystickMenu: raw.joystickMenu ?? DEFAULT_CONFIG.joystickMenu,
     };
   } catch {
     return DEFAULT_CONFIG;
