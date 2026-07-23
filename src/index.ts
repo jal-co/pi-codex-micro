@@ -109,6 +109,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       const input = config.deviceKeys[event.key];
+      // Dial rotation steps the thinking level, unless overridden.
+      if (!input && (event.key === "ENC_CW" || event.key === "ENC_CC")) {
+        if (event.act === 2) stepThinking(latestCtx, event.key === "ENC_CW" ? 1 : -1);
+        return;
+      }
       // Agent keys focus the session that owns the slot, unless the
       // user bound them to something else in deviceKeys.
       if (!input && /^AG0[0-5]$/.test(event.key)) {
