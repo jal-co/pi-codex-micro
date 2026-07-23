@@ -345,6 +345,12 @@ final class ConfigWindowController: NSObject, WKScriptMessageHandler, NSWindowDe
         stateTimer = nil
     }
 
+    /// Flash the pressed hardware key on the pictured pad (if open).
+    func flashKey(_ key: String) {
+        guard let window, window.isVisible else { return }
+        webView?.evaluateJavaScript("window.flashKey(\"\(key)\")")
+    }
+
     // JS -> Swift messages: { ready: true } or { key, value }.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
@@ -411,7 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let always = self.config.alwaysKeys.contains(key)
             let front = NSWorkspace.shared.frontmostApplication
             let owned = always || front?.bundleIdentifier != self.config.hostBundleId
-            if act == 1 { self.showKey(key, owned: owned) }
+            if act == 1 { self.showKey(key, owned: owned); self.configWindow.flashKey(key) }
             if !owned { return }
             guard let binding = self.config.binding(for: key) else { return }
 

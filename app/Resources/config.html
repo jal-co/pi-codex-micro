@@ -89,6 +89,12 @@
   .key:not(.locked):hover { transform: translateY(-1px); box-shadow: inset 0 0 0 2px var(--accent), 0 4px 10px rgba(30,32,40,.18); }
   .key.wide { border-radius: 10%; }
 
+  .pressed { margin-top: 12px; font-size: 13px; color: var(--muted); font-variant: tabular-nums; }
+  .pressed b { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .key.flash, .dial.flash { animation: flash .5s ease; }
+  .agent.flash { animation: flashAgent .5s ease; }
+  @keyframes flash { 0% { box-shadow: inset 0 0 0 3px var(--accent), 0 0 20px var(--accent); } 100% {} }
+  @keyframes flashAgent { 0% { box-shadow: inset 0 0 0 3px var(--accent), 0 0 20px var(--accent); } 100% {} }
   .legend { margin-top: 14px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 
@@ -140,6 +146,8 @@
       <div class="cell"><button class="key" data-key="ACT11"><span class="glyph">✦</span><span class="bind"></span></button></div>
     </div>
   </div>
+
+  <div class="pressed" id="pressed">Press a key on the pad to see its id…</div>
 
   <div class="legend">
     <span><i style="background:var(--idle)"></i>idle</span>
@@ -237,6 +245,17 @@
     document.querySelectorAll(".agent[data-slot]").forEach((el) => {
       el.dataset.state = (obj && obj[el.dataset.slot]) || "idle";
     });
+  };
+  // Swift calls this on every physical key press so you can see which
+  // hardware key is which. Shows the id and flashes the on-screen key.
+  const AGENT_SLOT = { AG00: "0", AG01: "1", AG02: "2", AG03: "3", AG04: "4", AG05: "5" };
+  window.flashKey = (key) => {
+    document.getElementById("pressed").innerHTML = "Pressed: <b>" + key + "</b>";
+    let el = document.querySelector('[data-key="' + key + '"]');
+    if (el && el.classList.contains("dial-hit")) el = el.parentElement.querySelector(".dial");
+    if (!el && AGENT_SLOT[key] !== undefined) el = document.querySelector('.agent[data-slot="' + AGENT_SLOT[key] + '"]');
+    if (!el) return;
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   };
   render();
   send({ ready: true });
