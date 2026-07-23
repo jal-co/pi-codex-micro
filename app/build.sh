@@ -53,8 +53,11 @@ cat > "$APP/Contents/Info.plist" <<PLISTEOF
 </plist>
 PLISTEOF
 
+# Bundle the config web UI.
+cp "$DIR/Resources/config.html" "$RES/config.html"
+
 swiftc -O \
-  -framework AppKit -framework IOKit \
+  -framework AppKit -framework IOKit -framework WebKit \
   "$DIR/Sources/main.swift" \
   -o "$MACOS/CodexMicroBridge"
 

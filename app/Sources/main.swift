@@ -11,6 +11,7 @@
 
 import AppKit
 import IOKit.hid
+import WebKit
 
 // MARK: - Config
 
@@ -263,63 +264,34 @@ func normalizeToPreset(_ binding: String?) -> String {
     return binding
 }
 
-final class ConfigWindowController: NSObject {
+final class ConfigWindowController: NSObject, WKScriptMessageHandler {
     private var window: NSWindow?
-    private var popups: [String: NSPopUpButton] = [:]
-    private var customCommands: [String: String] = [:]
+    private var webView: WKWebView?
     private let onSaved: () -> Void
 
     init(onSaved: @escaping () -> Void) { self.onSaved = onSaved }
 
     func show() {
-        if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let config = Config.load()
-        let rows = NSStackView()
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 8
-        rows.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        if let window {
+            injectBindings()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let controller = WKUserContentController()
+        controller.add(self, name: "bridge")
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController = controller
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 620), configuration: cfg)
+        webView = web
 
-        let hint = NSTextField(labelWithString: "Actions run when pi (Zentty) is not focused.")
-        hint.textColor = .secondaryLabelColor
-        rows.addArrangedSubview(hint)
-
-        for key in configurableKeys {
-            let row = NSStackView()
-            row.orientation = .horizontal
-            row.spacing = 10
-            let label = NSTextField(labelWithString: key)
-            label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
-            label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-            label.widthAnchor.constraint(equalToConstant: 70).isActive = true
-            let popup = NSPopUpButton()
-            for preset in actionPresets { popup.addItem(withTitle: preset.label) }
-            let current = normalizeToPreset(config.binding(for: key))
-            if current.hasPrefix("run:") {
-                customCommands[key] = String(current.dropFirst(4))
-                let title = "Custom: \(customCommands[key]!)"
-                popup.addItem(withTitle: title)
-                popup.selectItem(withTitle: title)
-            } else if let idx = actionPresets.firstIndex(where: { $0.value == current }) {
-                popup.selectItem(at: idx)
-            }
-            popup.target = self
-            popup.action = #selector(popupChanged(_:))
-            popup.identifier = NSUserInterfaceItemIdentifier(key)
-            popups[key] = popup
-            row.addArrangedSubview(label)
-            row.addArrangedSubview(popup)
-            rows.addArrangedSubview(row)
+        if let url = Bundle.main.url(forResource: "config", withExtension: "html") {
+            web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
 
-        let save = NSButton(title: "Save", target: self, action: #selector(save))
-        save.keyEquivalent = "\r"
-        rows.addArrangedSubview(save)
-
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 420),
-                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        win.title = "Codex Micro Bridge — Configure"
-        win.contentView = rows
+        let win = NSWindow(contentRect: web.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        win.title = "Codex Micro Bridge"
+        win.contentView = web
         win.center()
         win.isReleasedWhenClosed = false
         window = win
@@ -327,28 +299,25 @@ final class ConfigWindowController: NSObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc private func popupChanged(_ sender: NSPopUpButton) {
-        guard sender.titleOfSelectedItem == "Custom…" || sender.titleOfSelectedItem == "Custom command…" else { return }
-        guard let key = sender.identifier?.rawValue else { return }
-        let alert = NSAlert()
-        alert.messageText = "Custom command for \(key)"
-        alert.informativeText = "Runs in /bin/sh when pressed (e.g. open -a Figma)."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.stringValue = customCommands[key] ?? ""
-        alert.accessoryView = field
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn, !field.stringValue.isEmpty {
-            customCommands[key] = field.stringValue
-            let title = "Custom: \(field.stringValue)"
-            if sender.item(withTitle: title) == nil { sender.addItem(withTitle: title) }
-            sender.selectItem(withTitle: title)
-        } else {
-            sender.selectItem(at: 0)
-        }
+    /// Push the current effective bindings into the page as preset values.
+    private func injectBindings() {
+        let config = Config.load()
+        var map: [String: String] = [:]
+        for key in configurableKeys { map[key] = normalizeToPreset(config.binding(for: key)) }
+        guard let data = try? JSONSerialization.data(withJSONObject: map),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.setBindings(\(json))")
     }
 
-    @objc private func save() {
+    // JS -> Swift messages: { ready: true } or { key, value }.
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any] else { return }
+        if body["ready"] as? Bool == true { injectBindings(); return }
+        guard let key = body["key"] as? String, let value = body["value"] as? String else { return }
+        writeBinding(key: key, value: value)
+    }
+
+    private func writeBinding(key: String, value: String) {
         let path = ("~/.pi/agent/codex-micro.json" as NSString).expandingTildeInPath
         var json: [String: Any] = [:]
         if let data = FileManager.default.contents(atPath: path),
@@ -356,20 +325,12 @@ final class ConfigWindowController: NSObject {
             json = existing
         }
         var global = (json["globalKeys"] as? [String: String]) ?? [:]
-        for (key, popup) in popups {
-            let title = popup.titleOfSelectedItem ?? "Unbound"
-            if title.hasPrefix("Custom") {
-                if let cmd = customCommands[key], !cmd.isEmpty { global[key] = "run:" + cmd } else { global.removeValue(forKey: key) }
-            } else if let preset = actionPresets.first(where: { $0.label == title }) {
-                if preset.value.isEmpty { global.removeValue(forKey: key) } else { global[key] = preset.value }
-            }
-        }
+        if value.isEmpty { global.removeValue(forKey: key) } else { global[key] = value }
         json["globalKeys"] = global
         if let out = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
             try? out.write(to: URL(fileURLWithPath: path))
         }
         onSaved()
-        window?.close()
     }
 }
 

@@ -23,10 +23,10 @@ openssl req -newkey rsa:2048 -nodes -keyout "$TMP/key.pem" \
   -addext "keyUsage=critical,digitalSignature" \
   -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1
 
-openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-  -out "$TMP/id.p12" -name "$CERT_NAME" -passout pass:cmb >/dev/null 2>&1
-
-security import "$TMP/id.p12" -k "$KEYCHAIN" -P cmb -T /usr/bin/codesign >/dev/null
+# Import the key and cert as separate PEMs (avoids PKCS12 MAC/algorithm
+# mismatches between OpenSSL 3 and the macOS security tool).
+security import "$TMP/key.pem" -k "$KEYCHAIN" -T /usr/bin/codesign >/dev/null
+security import "$TMP/cert.pem" -k "$KEYCHAIN" -T /usr/bin/codesign >/dev/null
 
 echo "Created code-signing identity: $CERT_NAME"
 echo "Rebuild the app; permission grants will now persist across rebuilds."

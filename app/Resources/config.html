@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex Micro Bridge</title>
+<style>
+  :root {
+    --bg: #1113; --case: #f3f3f5; --plate: #e9e9ec;
+    --key-white: #fcfcfd; --text: #2b2c31; --muted: #83848c;
+    --accent: #3d7eff; --idle: #e9e9e6; --thinking: #3d7eff;
+    --complete: #30c463; --needs-input: #ffb000; --error: #ff453a;
+    color-scheme: light dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 13px/1.4 -apple-system, system-ui, sans-serif;
+    background: #14151a; color: #e7e8ee;
+    display: grid; place-items: center; min-height: 100vh; padding: 20px;
+  }
+  .wrap { width: min(92vw, 560px); }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 12px; }
+
+  .device {
+    container-type: inline-size;
+    position: relative; width: 100%; aspect-ratio: 1 / 0.92;
+    border-radius: 7%;
+    background: linear-gradient(160deg, #fbfbfc, #e7e8ec);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .plate {
+    position: absolute; inset: 4.5%; border-radius: 5%;
+    background: linear-gradient(160deg, var(--plate), #dcdce1);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.12);
+  }
+  .grid {
+    position: absolute; inset: 9.5% 10.5%;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr); gap: 3.2%;
+  }
+  .cell { position: relative; }
+  .cell.span2 { grid-column: span 2; }
+
+  .dial {
+    position: absolute; inset: 4%; border-radius: 50%;
+    background: linear-gradient(135deg,#fff,#f4f4f6 55%,#dddde2);
+    box-shadow: 0 3px 8px rgba(30,32,40,.18), inset 0 1px 2px rgba(255,255,255,.9);
+  }
+  .dial-hit { position: absolute; top: 0; height: 100%; width: 50%; border: 0; background: transparent; cursor: pointer; }
+  .dial-hit.ccw { left: 0; } .dial-hit.cw { right: 0; }
+  .dial-hit:hover { background: rgba(61,126,255,.12); border-radius: 50%; }
+
+  .joy { position: absolute; inset: 3%; border: .45cqi dashed #2b2c31; border-radius: 26%; }
+  .joy .puck { position: absolute; inset: 7%; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #3a3b40, #151619 65%); }
+
+  .agent {
+    position: absolute; inset: 0; border: 0; border-radius: 20%; cursor: default;
+    background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(235,236,241,.65));
+    box-shadow: inset 0 0 0 1px rgba(120,124,140,.3), 0 2px 5px rgba(30,32,40,.12);
+  }
+  .agent .cap { position: absolute; inset: 13%; border-radius: 22%; background: rgba(255,255,255,.55); }
+  .agent .who { position: absolute; left: 6%; right: 6%; bottom: 6%; text-align: center;
+    font-size: 1.9cqi; letter-spacing: .05em; color: var(--muted); }
+
+  .key {
+    position: absolute; inset: 0; border: 0; border-radius: 16%; cursor: pointer;
+    background: linear-gradient(180deg, #fff, var(--key-white));
+    box-shadow: inset 0 0 0 1px rgba(120,124,140,.28), 0 2px 5px rgba(30,32,40,.14);
+    color: var(--text); display: grid; place-items: center; gap: 2%;
+    font-size: 1.9cqi; padding: 6% 4%; transition: box-shadow .12s ease, transform .12s ease;
+  }
+  .key .glyph { font-size: 4.5cqi; line-height: 1; }
+  .key .bind { font-size: 1.8cqi; color: var(--accent); font-weight: 600; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 92%; }
+  .key.locked { cursor: default; opacity: .9; }
+  .key:not(.locked):hover { transform: translateY(-1px); box-shadow: inset 0 0 0 2px var(--accent), 0 4px 10px rgba(30,32,40,.18); }
+  .key.wide { border-radius: 10%; }
+
+  .legend { margin-top: 14px; color: var(--muted); font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+  /* Assign picker overlay */
+  .overlay { position: fixed; inset: 0; background: rgba(8,9,12,.6); display: none; place-items: center; padding: 24px; }
+  .overlay.open { display: grid; }
+  .panel { width: min(90vw, 360px); background: #1c1e25; border: 1px solid #2c2f38;
+    border-radius: 14px; padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .panel h2 { margin: 0 0 2px; font-size: 14px; }
+  .panel .keyid { color: var(--muted); font-size: 12px; margin: 0 0 12px; font-variant: tabular-nums; }
+  .opt { display: block; width: 100%; text-align: left; padding: 9px 12px; margin: 2px 0;
+    border: 0; border-radius: 8px; background: transparent; color: #e7e8ee; font: inherit; cursor: pointer; }
+  .opt:hover { background: #2a2d36; }
+  .opt.sel { background: var(--accent); color: #fff; }
+  .panel .row { display: flex; gap: 8px; margin-top: 12px; }
+  .panel input { flex: 1; background: #12131a; border: 1px solid #2c2f38; color: #e7e8ee;
+    border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .panel button.go { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Codex Micro Bridge</h1>
+  <p class="sub">Click a command key or the dial to assign an action for when pi isn't focused. The six frosted keys are live agent indicators.</p>
+
+  <div class="device">
+    <div class="plate"></div>
+    <div class="grid">
+      <!-- Row 1 -->
+      <div class="cell"><div class="dial"></div>
+        <button class="dial-hit ccw" data-key="ENC_CC" title="dial left"></button>
+        <button class="dial-hit cw" data-key="ENC_CW" title="dial right"></button></div>
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 1</span></div></div>
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 2</span></div></div>
+      <div class="cell"><div class="joy"><div class="puck"></div></div></div>
+      <!-- Row 2 -->
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 3</span></div></div>
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 4</span></div></div>
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 5</span></div></div>
+      <div class="cell"><div class="agent"><span class="cap"></span><span class="who">AGENT 6</span></div></div>
+      <!-- Row 3 -->
+      <div class="cell"><button class="key" data-key="ACT06"><span class="glyph">⚡</span><span class="bind"></span></button></div>
+      <div class="cell"><button class="key" data-key="ACT07"><span class="glyph">✓</span><span class="bind"></span></button></div>
+      <div class="cell"><button class="key" data-key="ACT08"><span class="glyph">✕</span><span class="bind"></span></button></div>
+      <div class="cell"><button class="key" data-key="ACT09"><span class="glyph">⤳</span><span class="bind"></span></button></div>
+      <!-- Row 4 -->
+      <div class="cell"><button class="key locked" data-key="ACT10" title="always-on mic"><span class="glyph">🎙</span><span class="bind">fn hold · always</span></button></div>
+      <div class="cell span2"><button class="key wide" data-key="ACT12"><span class="glyph">⏎</span><span class="bind"></span></button></div>
+      <div class="cell"><button class="key" data-key="ACT11"><span class="glyph">✦</span><span class="bind"></span></button></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--idle)"></i>idle</span>
+    <span><i style="background:var(--thinking)"></i>thinking</span>
+    <span><i style="background:var(--complete)"></i>complete</span>
+    <span><i style="background:var(--needs-input)"></i>needs input</span>
+    <span><i style="background:var(--error)"></i>error</span>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <h2 id="panelTitle">Assign action</h2>
+    <p class="keyid" id="panelKey"></p>
+    <div id="opts"></div>
+    <div class="row">
+      <input id="customCmd" placeholder="Custom shell command (e.g. open -a Figma)">
+      <button class="go" id="customGo">Set</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PRESETS = [
+    ["Unbound", ""],
+    ["Return", "key:36"],
+    ["Down + Return", "key:125,36"],
+    ["Escape", "key:53"],
+    ["Tab", "key:48"],
+    ["Space", "key:49"],
+    ["Up", "key:126"], ["Down", "key:125"], ["Left", "key:123"], ["Right", "key:124"],
+    ["fn hold (dictation)", "holdfn"],
+  ];
+  const LABEL = new Map(PRESETS.map(([l, v]) => [v, l]));
+  let bindings = {};   // key -> value
+  let activeKey = null;
+
+  function send(msg) { window.webkit?.messageHandlers?.bridge?.postMessage(msg); }
+
+  function labelFor(value) {
+    if (!value) return "";
+    if (LABEL.has(value)) return LABEL.get(value);
+    if (value.startsWith("run:")) return "run: " + value.slice(4);
+    return value;
+  }
+
+  function render() {
+    document.querySelectorAll(".key[data-key]").forEach((el) => {
+      if (el.classList.contains("locked")) return;
+      const v = bindings[el.dataset.key] || "";
+      el.querySelector(".bind").textContent = labelFor(v) || "—";
+    });
+  }
+
+  function openPicker(key) {
+    activeKey = key;
+    document.getElementById("panelKey").textContent = key;
+    const opts = document.getElementById("opts");
+    opts.innerHTML = "";
+    const current = bindings[key] || "";
+    for (const [label, value] of PRESETS) {
+      const b = document.createElement("button");
+      b.className = "opt" + (value === current ? " sel" : "");
+      b.textContent = label;
+      b.onclick = () => choose(value);
+      opts.appendChild(b);
+    }
+    document.getElementById("customCmd").value = current.startsWith("run:") ? current.slice(4) : "";
+    document.getElementById("overlay").classList.add("open");
+  }
+
+  function choose(value) {
+    bindings[activeKey] = value;
+    send({ key: activeKey, value });
+    close();
+    render();
+  }
+
+  function close() { document.getElementById("overlay").classList.remove("open"); }
+
+  document.querySelectorAll(".key[data-key], .dial-hit[data-key]").forEach((el) => {
+    if (el.classList.contains("locked")) return;
+    el.addEventListener("click", () => openPicker(el.dataset.key));
+  });
+  document.getElementById("overlay").addEventListener("click", (e) => { if (e.target.id === "overlay") close(); });
+  document.getElementById("customGo").addEventListener("click", () => {
+    const cmd = document.getElementById("customCmd").value.trim();
+    if (cmd) choose("run:" + cmd);
+  });
+
+  // Swift injects current bindings by calling window.setBindings(json).
+  window.setBindings = (obj) => { bindings = obj || {}; render(); };
+  render();
+  send({ ready: true });
+</script>
+</body>
+</html>
